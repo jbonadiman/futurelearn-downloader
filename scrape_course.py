@@ -134,6 +134,42 @@ def url_path(path):
     return urllib.parse.quote(path.replace(os.sep, "/"), safe="/")
 
 
+# A step page's own link targets double as its manifest — see `step_is_complete`.
+MD_LINK_RE = re.compile(r"\[[^\]\n]*\]\(([^()\n]*(?:\([^()\n]*\)[^()\n]*)*)\)")
+MD_SRC_RE = re.compile(r"""<(?:audio|video)\b[^>]*\bsrc="([^"]*)\"""")
+REMOTE_DEST_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:|^#|^/")
+
+
+def local_refs(md_text):
+    """Local files referenced by a step page (link targets + <video>/<audio> src)."""
+    for m in list(MD_LINK_RE.finditer(md_text)) + list(MD_SRC_RE.finditer(md_text)):
+        dest = m.group(1)
+        if not REMOTE_DEST_RE.match(dest):
+            yield urllib.parse.unquote(dest)
+
+
+def step_is_complete(md_path):
+    """True when a step needs no further work, so a resumed run can skip its fetches.
+
+    The Markdown is written last and links every asset the step produced, so it works
+    as the manifest: page present, and every file it points at present and non-empty.
+    A step whose video died in phase 2 fails this check and gets re-fetched — which it
+    must, since the vzaar id only exists on the step page.
+    """
+    if not (os.path.exists(md_path) and os.path.getsize(md_path) > 0):
+        return False
+    folder = os.path.dirname(md_path)
+    try:
+        with open(md_path, encoding="utf-8") as fh:
+            md = fh.read()
+    except OSError:
+        return False
+    return all(
+        os.path.exists(os.path.join(folder, rel)) and os.path.getsize(os.path.join(folder, rel)) > 0
+        for rel in local_refs(md)
+    )
+
+
 def body_to_markdown(body_html, audio_files=()):
     # FutureLearn escapes `>` (as `&gt;`) inside the JSON-in-HTML-comment, which yields
     # malformed `<p&gt;…` tags — html.unescape first so markdownify sees real HTML.
@@ -243,21 +279,45 @@ def download_bytes(session, url, dest):
     return os.path.getsize(dest) > 0
 
 
-def download_related(session, link_url, ftype, title_sane, folder, used):
-    """Download a related file, deriving its extension from type or the final URL.
-    Dedups names within a step (e.g. "u" vs "ü" both sanitise to "u")."""
-    r = session.get(link_url, timeout=120)
-    r.raise_for_status()
-    ext = EXT_MAP.get(ftype) or os.path.splitext(r.url.split("?")[0])[1] or ".bin"
-    if not ext.startswith("."):
-        ext = "." + ext
-    fname = title_sane + ext
+def unique_name(base, ext, used):
+    """Reserve a collision-free filename within a step ("u" vs "ü" both sanitise to "u").
+
+    Deterministic: the same step processed in the same order yields the same suffixes,
+    which is what lets a resumed run recognise a file it wrote on an earlier pass.
+    """
+    fname = base + ext
     k = 2
     while fname in used:
-        fname = f"{title_sane}-{k}{ext}"
+        fname = f"{base}-{k}{ext}"
         k += 1
     used.add(fname)
+    return fname
+
+
+def download_related(session, link_url, ftype, title_sane, folder, used):
+    """Download a related file, deriving its extension from type or the final URL.
+
+    Skips the transfer when the file is already on disk. When `relatedFiles[].type` is
+    known the name is derivable up front, so the GET is skipped too; otherwise the
+    extension only appears once the `/links/f/…` redirect resolves and we have to ask.
+    """
+    ext = EXT_MAP.get(ftype)
+    r = None
+    if not ext:
+        r = session.get(link_url, timeout=120)
+        r.raise_for_status()
+        ext = os.path.splitext(r.url.split("?")[0])[1] or ".bin"
+    if not ext.startswith("."):
+        ext = "." + ext
+
+    fname = unique_name(title_sane, ext, used)
     dest = os.path.join(folder, fname)
+    if os.path.exists(dest) and os.path.getsize(dest) > 0:
+        return fname
+
+    if r is None:
+        r = session.get(link_url, timeout=120)
+        r.raise_for_status()
     with open(dest, "wb") as fh:
         fh.write(r.content)
     return fname
@@ -298,13 +358,27 @@ def localize_audio(session, body_html, folder, base, used):
 
 
 def download_video(vid, dest_mp4):
+    """Mux the HLS stream to `dest_mp4`, atomically.
+
+    ffmpeg is writing a growing file, so a run killed mid-video leaves a non-empty but
+    truncated .mp4 — which the resume check would then read as "already downloaded" and
+    skip forever. Writing to `.part` and renaming on success means the final name only
+    ever exists for a complete video. `-f mp4` is required because the `.part`
+    extension gives ffmpeg no format to infer.
+    """
     url = f"https://view.vzaar.com/{vid}/adaptive.m3u8"
+    part = dest_mp4 + ".part"
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", url,
-           "-c", "copy", "-bsf:a", "aac_adtstoasc", "-movflags", "+faststart", dest_mp4]
+           "-c", "copy", "-bsf:a", "aac_adtstoasc", "-movflags", "+faststart",
+           "-f", "mp4", part]
     r = subprocess.run(cmd, capture_output=True, text=True)
-    ok = r.returncode == 0 and os.path.exists(dest_mp4) and os.path.getsize(dest_mp4) > 0
-    if not ok:
+    ok = r.returncode == 0 and os.path.exists(part) and os.path.getsize(part) > 0
+    if ok:
+        os.replace(part, dest_mp4)
+    else:
         print(f"      ! ffmpeg failed: {r.stderr.strip()[:300]}", file=sys.stderr)
+        if os.path.exists(part):
+            os.remove(part)
     return ok
 
 
@@ -481,6 +555,8 @@ def main():
     ap.add_argument("--skip-downloads", action="store_true")
     ap.add_argument("--skip-audio", action="store_true", help="don't localise inline audio clips")
     ap.add_argument("--skip-quiz", action="store_true", help="don't scrape quiz/test questions")
+    ap.add_argument("--force", action="store_true",
+                    help="re-scrape steps that are already complete (default: skip them)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -504,6 +580,7 @@ def main():
 
     session = make_session(parse_cookies(args.cookies))
     video_jobs = []  # (vzaarVideoId, dest) — deferred to phase 2 (no cookies needed)
+    skipped = 0
 
     # ---- Phase 1: pages + subtitles + downloads (needs cookies) ----
     for i, (parts, step) in enumerate(items):
@@ -514,6 +591,10 @@ def main():
         # Every asset written into this step's folder, so downloads/audio can't collide
         # (e.g. "u" and "ü" both sanitise to "u").
         used_names = set()
+        if not args.force and step_is_complete(md_path):
+            print(f"[{i+1}/{len(items)}] {step.get('stepNumber')} {title} -- complete, skipping")
+            skipped += 1
+            continue
         print(f"[{i+1}/{len(items)}] {step.get('stepNumber')} {title}")
 
         url = mf.BASE_URL + step.get("href", "")
@@ -593,7 +674,8 @@ def main():
     with open(os.path.join(root, "ToC.md"), "w", encoding="utf-8") as fh:
         fh.write(toc)
 
-    print(f"\nDone. Course saved under: {root}")
+    print(f"\nDone. Course saved under: {root}"
+          + (f" ({skipped} step(s) already complete, skipped)" if skipped else ""))
 
 
 if __name__ == "__main__":

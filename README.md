@@ -35,6 +35,7 @@ No headless browser required.
 | `--skip-audio` | leave inline audio clips as remote links |
 | `--skip-quiz` | don't scrape quiz/test questions |
 | `--delay SEC` | pause between step pages (default 0.3) |
+| `--force` | re-scrape steps that are already complete (default: skip them) |
 | `--dry-run` | print the plan, do nothing |
 
 `make_folders.py` is the stdlib-only tree builder and holds the shared helpers; it can be run
@@ -53,6 +54,22 @@ against current Cloudflare). Fingerprint impersonation is what actually resolves
 
 `cf_clearance` expires (typically ~30 min). If a run starts hitting 403s, re-export a fresh
 `cookies.txt` and re-run — already-downloaded media is skipped, so it resumes cleanly.
+
+## Resuming
+
+Runs are resumable — just run the same command again. A step is treated as done when its
+Markdown page exists *and* every local file that page links to is present and non-empty; the
+Markdown is written last and references every asset, so it doubles as the step's manifest.
+A completed step costs no requests at all, so a re-run over a finished course takes a fraction
+of a second instead of one fetch per step plus one per quiz question.
+
+That matters because `cf_clearance` expires after ~30 minutes: if a long run dies partway, the
+resumed run spends its fresh cookie window on the steps that are actually missing.
+
+Videos are muxed to `<name>.mp4.part` and renamed only on success, so a run killed mid-video
+leaves no truncated file that a later run would mistake for a finished download.
+
+Use `--force` to re-scrape everything, e.g. when the course content itself has been updated.
 
 ## Output layout
 
