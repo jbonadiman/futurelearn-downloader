@@ -49,6 +49,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.parse
 
 import markdownify
 from curl_cffi import requests as creq
@@ -122,6 +123,17 @@ def extract_step(html_text):
     return out
 
 
+def url_path(path):
+    """Percent-encode a relative path for a Markdown/HTML link target.
+
+    Course titles are full of spaces, commas and parentheses. A Markdown destination
+    ends at the first space, so `[x](Week 1 - Intro/a.md)` isn't a link at all — the
+    renderer prints it verbatim. Parentheses close the destination early for the same
+    reason. `quote` escapes all three (it only leaves `A-Za-z0-9_.-~` and, here, `/`).
+    """
+    return urllib.parse.quote(path.replace(os.sep, "/"), safe="/")
+
+
 def body_to_markdown(body_html, audio_files=()):
     # FutureLearn escapes `>` (as `&gt;`) inside the JSON-in-HTML-comment, which yields
     # malformed `<p&gt;…` tags — html.unescape first so markdownify sees real HTML.
@@ -132,7 +144,7 @@ def body_to_markdown(body_html, audio_files=()):
     md = markdownify.markdownify(body, heading_style="ATX").strip()
     # Turn the (now local) audio links into real players, mirroring how videos are embedded.
     for fname in audio_files:
-        player = f'<audio controls src="{fname}"></audio>'
+        player = f'<audio controls src="{url_path(fname)}"></audio>'
         md, n = re.subn(r"\[[^\]]*\]\(%s\)" % re.escape(fname), player, md)
         if not n:
             # The URL only lived in a `data-url` attribute markdownify threw away —
@@ -373,7 +385,7 @@ def build_step_markdown(title, data, title_sane, sub_links, download_links,
     lines = [f"# {title}", ""]
     video = data["video"]
     if video:
-        lines.append(f'<video controls src="{title_sane}.mp4"></video>')
+        lines.append(f'<video controls src="{url_path(title_sane + ".mp4")}"></video>')
         lines.append("")
 
     if data["body_html"]:
@@ -397,7 +409,7 @@ def build_step_markdown(title, data, title_sane, sub_links, download_links,
         lines.append("## Downloads")
         lines.append("")
         for label, fname in download_links:
-            lines.append(f"- [{label}]({fname})")
+            lines.append(f"- [{label}]({url_path(fname)})")
         lines.append("")
 
     if data["related_links"]:
@@ -411,7 +423,7 @@ def build_step_markdown(title, data, title_sane, sub_links, download_links,
         lines.append("## Subtitles")
         lines.append("")
         for name in sub_links:
-            lines.append(f"- [{name}]({name})")
+            lines.append(f"- [{name}]({url_path(name)})")
         lines.append("")
 
     if video:
@@ -448,7 +460,7 @@ def build_toc(root_name, items):
             lines.append(f"### {act}")
             lines.append("")
             cur_act = act
-        lines.append(f"- [{stepdir}]({rel})")
+        lines.append(f"- [{stepdir}]({url_path(rel)})")
     lines.append("")
     return "\n".join(lines)
 
