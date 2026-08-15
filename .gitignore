@@ -1,0 +1,13 @@
+# Secrets — session cookies are as sensitive as a password
+cookies.txt
+*.cookies
+
+# Saved course pages and scrape output
+page.html
+*.html
+out/
+courses/
+
+__pycache__/
+*.pyc
+.venv/

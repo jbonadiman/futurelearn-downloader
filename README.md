@@ -1,0 +1,107 @@
+# futurelearn-downloader
+
+Downloads a FutureLearn course you are enrolled in into a local folder tree: Markdown pages,
+videos, subtitles, inline audio clips, quiz questions, PDF/audio downloads, and a ToC.
+
+Built for offline study of a course you already have access to. It authenticates as *you*,
+via your own browser cookies, and never submits answers or touches course state.
+
+## Requirements
+
+- Python 3.11+
+- [`uv`](https://docs.astral.sh/uv/) (or a venv with `curl_cffi` and `markdownify`)
+- `ffmpeg` on `PATH` (videos are HLS streams, muxed by ffmpeg)
+- A Netscape-format `cookies.txt` exported from your logged-in browser, covering **both**
+  `futurelearn.com` and `ugc.futurelearn.com` (the subtitle CDN). The "Get cookies.txt
+  LOCALLY" extension works.
+- A saved course page — open any step of the course in your browser and save the HTML.
+  Any step page works; each one embeds the full course tree.
+
+## Run
+
+```bash
+uv run --with curl_cffi --with markdownify \
+  python scrape_course.py page.html --cookies cookies.txt -o ~/Courses
+```
+
+No headless browser required.
+
+### Options
+
+| flag | effect |
+|------|--------|
+| `--limit N` | only process the first N steps |
+| `--skip-video` / `--skip-subs` / `--skip-downloads` | skip a media type |
+| `--skip-audio` | leave inline audio clips as remote links |
+| `--skip-quiz` | don't scrape quiz/test questions |
+| `--delay SEC` | pause between step pages (default 0.3) |
+| `--dry-run` | print the plan, do nothing |
+
+`make_folders.py` is the stdlib-only tree builder and holds the shared helpers; it can be run
+on its own if you only want the folder skeleton.
+
+## Why `curl_cffi`
+
+FutureLearn sits behind Cloudflare bot management. A browser's `cf_clearance` cookie is bound
+to that browser's TLS/JA3 fingerprint, so plain `curl`/`urllib` get 403-challenged even with a
+valid `cookies.txt`. `curl_cffi` impersonates a real Chrome fingerprint, so the same
+`cookies.txt` is accepted directly — verified 200 on step pages, subtitle `.vtt` files, and
+`/links/f/…` downloads.
+
+FlareSolverr is the wrong tool here: it's a headless-browser proxy (slow, frequently broken
+against current Cloudflare). Fingerprint impersonation is what actually resolves the mismatch.
+
+`cf_clearance` expires (typically ~30 min). If a run starts hitting 403s, re-export a fresh
+`cookies.txt` and re-run — already-downloaded media is skipped, so it resumes cleanly.
+
+## Output layout
+
+```
+Learn Chinese - Introduction to Chinese Pronunciation and Tone/
+├── ToC.md                          # nested links to every page
+└── Week 1 - Introduction to Pinyin - initials and finals 1/
+    └── 1. Introduction to Pinyin/
+        ├── 1.1 Welcoming you to the course/
+        │   ├── Welcoming you to the course.md     # title, inline <video>, transcript
+        │   ├── Welcoming you to the course.mp4
+        │   ├── Welcoming you to the course.en.vtt
+        │   └── Tutorial for week 1.pdf
+        ├── 1.7 Six Simple Finals/
+        │   ├── Six Simple Finals.md
+        │   ├── Six Simple Finals.mp4
+        │   ├── a.mp3  o.mp3  e.mp3  i.mp3  u.mp3  u-2.mp3   # pronunciation audio (ü → u-2)
+        │   └── Pinyin of six simple finals.pdf
+        └── 1.10 Listen and check/
+            ├── Listen and check.md                 # questions as checkbox lists
+            └── Listen and check-q1-audio-1.mp3     # each question's audio clip
+```
+
+## Notes / gotchas
+
+- Download extensions come from the `relatedFiles[].type` field (`pdf`, `audio`, …), falling
+  back to the final URL's extension.
+- Folder/file names are sanitised for Linux + Windows: `Ⅱ→II`, `ü→u`, smart quotes/ellipsis/`?`
+  stripped, `/` and `:` replaced, trailing spaces/dots removed, Windows reserved names guarded.
+- Name collisions (e.g. `u` vs `ü` both → `u`) get a `-2` suffix.
+- **Inline audio** (`[Click to listen](…mp3)` links and FutureLearn's `soundcite` players) is
+  downloaded as `<step>-audio-N.mp3` and embedded as `<audio controls src="…">`, the same way
+  videos are. It lives in the body HTML, not in `relatedFiles`, so it needs separate handling.
+- **Quizzes and tests** are scraped into a `## Quiz` section: one `### Question N` per question,
+  answers as `- [ ]` checkboxes, question audio embedded. Cloze ("fill in the blanks") questions
+  render the text with `**[n]**` gap markers plus a blank answer list.
+  - Questions are NOT on the step page — each is at `<step>/questions/<n>`, and the question
+    count comes from `quizProgressNav`. Ask for `<step>/quiz/introduction` explicitly for the
+    quiz intro: once a quiz has been started, the bare step URL serves the current question.
+  - Correct answers appear in the JSON (`gaveCorrectAnswer`) only **after** you have attempted
+    a question, so unattempted quizzes come out with empty checkboxes. The scraper never
+    submits anything.
+
+## Legal
+
+For personal, offline use of courses you are enrolled in. Course content remains the property
+of FutureLearn and the partner institutions; this tool grants you no rights to it, and
+redistributing downloaded material is on you. Check FutureLearn's terms before use.
+
+## Licence
+
+GNU Affero General Public License v3.0 or later — see [LICENSE](LICENSE).
