@@ -37,8 +37,9 @@ a fresh cookies.txt from your logged-in browser and re-run (the script skips wha
 downloaded, so it resumes cleanly).
 
 Run:
-    uv run --with "curl_cffi" --with markdownify \
-      python scrape_course.py page.html --cookies cookies.txt -o /path/out
+    futurelearn page.html --cookies cookies.txt -o /path/out
+
+(or, without installing: `python -m futurelearn_downloader page.html --cookies cookies.txt`)
 """
 
 import argparse
@@ -54,7 +55,7 @@ import urllib.parse
 import markdownify
 from curl_cffi import requests as creq
 
-import make_folders as mf
+from . import make_folders as mf
 
 UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")

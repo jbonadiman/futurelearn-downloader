@@ -6,10 +6,24 @@ videos, subtitles, inline audio clips, quiz questions, PDF/audio downloads, and 
 Built for offline study of a course you already have access to. It authenticates as *you*,
 via your own browser cookies, and never submits answers or touches course state.
 
+## Install
+
+```bash
+uv tool install git+https://github.com/jbonadiman/futurelearn-downloader.git
+```
+
+This installs the `futurelearn` command into `~/.local/bin`. To install from a local
+checkout instead:
+
+```bash
+uv tool install .
+```
+
 ## Requirements
 
-- Python 3.11+
-- [`uv`](https://docs.astral.sh/uv/) (or a venv with `curl_cffi` and `markdownify`)
+- Python 3.9+
+- [`uv`](https://docs.astral.sh/uv/) (for `uv tool install`) — or a venv with
+  `curl_cffi` and `markdownify`
 - `ffmpeg` on `PATH` (videos are HLS streams, muxed by ffmpeg)
 - A Netscape-format `cookies.txt` exported from your logged-in browser, covering **both**
   `futurelearn.com` and `ugc.futurelearn.com` (the subtitle CDN). The "Get cookies.txt
@@ -20,9 +34,10 @@ via your own browser cookies, and never submits answers or touches course state.
 ## Run
 
 ```bash
-uv run --with curl_cffi --with markdownify \
-  python scrape_course.py page.html --cookies cookies.txt -o ~/Courses
+futurelearn page.html --cookies cookies.txt -o ~/Courses
 ```
+
+(Without installing: `python -m futurelearn_downloader page.html --cookies cookies.txt -o ~/Courses`.)
 
 No headless browser required.
 
@@ -38,8 +53,8 @@ No headless browser required.
 | `--force` | re-scrape steps that are already complete (default: skip them) |
 | `--dry-run` | print the plan, do nothing |
 
-`make_folders.py` is the stdlib-only tree builder and holds the shared helpers; it can be run
-on its own if you only want the folder skeleton.
+`make_folders.py` is an internal helper module (name sanitising + course-tree parsing), imported
+by the scraper — not meant to be run directly.
 
 ## Why `curl_cffi`
 

@@ -12,5 +12,13 @@ __pycache__/
 *.pyc
 .venv/
 
+# Build / packaging artifacts
+dist/
+build/
+*.egg-info/
+
+# Scrape run logs
+*.log
+
 # One-shot migration helper for output scraped before the link-encoding fix
 fix_md_links.py
