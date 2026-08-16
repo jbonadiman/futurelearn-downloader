@@ -52,11 +52,13 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
 
 import markdownify
 from curl_cffi import requests as creq
+from tqdm import tqdm
 
 from . import make_folders as mf
 
@@ -275,11 +277,21 @@ def fetch_text(session, url):
     return r.text
 
 
+def _write_stream(r, dest):
+    """Write a streamed response to `dest` with a progress bar sized from Content-Length
+    (or indeterminate when the server omits it, as FutureLearn's redirected downloads do)."""
+    total = int(r.headers.get("content-length") or 0)
+    with open(dest, "wb") as fh, tqdm(total=total or None, unit="B", unit_scale=True,
+                                       desc=os.path.basename(dest), leave=False) as bar:
+        for chunk in r.iter_content(chunk_size=1 << 16):
+            fh.write(chunk)
+            bar.update(len(chunk))
+
+
 def download_bytes(session, url, dest):
-    r = session.get(url, timeout=120)
+    r = session.get(url, timeout=120, stream=True)
     r.raise_for_status()
-    with open(dest, "wb") as fh:
-        fh.write(r.content)
+    _write_stream(r, dest)
     return os.path.getsize(dest) > 0
 
 
@@ -308,7 +320,7 @@ def download_related(session, link_url, ftype, title_sane, folder, used):
     ext = EXT_MAP.get(ftype)
     r = None
     if not ext:
-        r = session.get(link_url, timeout=120)
+        r = session.get(link_url, timeout=120, stream=True)
         r.raise_for_status()
         ext = os.path.splitext(r.url.split("?")[0])[1] or ".bin"
     if not ext.startswith("."):
@@ -320,10 +332,9 @@ def download_related(session, link_url, ftype, title_sane, folder, used):
         return fname
 
     if r is None:
-        r = session.get(link_url, timeout=120)
+        r = session.get(link_url, timeout=120, stream=True)
         r.raise_for_status()
-    with open(dest, "wb") as fh:
-        fh.write(r.content)
+    _write_stream(r, dest)
     return fname
 
 
@@ -375,12 +386,30 @@ def download_video(vid, dest_mp4):
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", url,
            "-c", "copy", "-bsf:a", "aac_adtstoasc", "-movflags", "+faststart",
            "-f", "mp4", part]
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    ok = r.returncode == 0 and os.path.exists(part) and os.path.getsize(part) > 0
+    proc = subprocess.Popen(cmd, stderr=subprocess.PIPE, text=True)
+
+    # ffmpeg gives no reliable total duration for adaptive HLS up front, so the bar just
+    # ticks by polling how large `.part` has grown — indeterminate, but shows liveness.
+    stop = threading.Event()
+    def _poll():
+        with tqdm(unit="B", unit_scale=True, desc=os.path.basename(dest_mp4),
+                  leave=False) as bar:
+            last = 0
+            while not stop.wait(0.5):
+                size = os.path.getsize(part) if os.path.exists(part) else 0
+                bar.update(size - last)
+                last = size
+    poller = threading.Thread(target=_poll, daemon=True)
+    poller.start()
+    stderr = proc.communicate()[1]
+    stop.set()
+    poller.join()
+
+    ok = proc.returncode == 0 and os.path.exists(part) and os.path.getsize(part) > 0
     if ok:
         os.replace(part, dest_mp4)
     else:
-        print(f"      ! ffmpeg failed: {r.stderr.strip()[:300]}", file=sys.stderr)
+        print(f"      ! ffmpeg failed: {stderr.strip()[:300]}", file=sys.stderr)
         if os.path.exists(part):
             os.remove(part)
     return ok
