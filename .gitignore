@@ -20,5 +20,8 @@ build/
 # Scrape run logs
 *.log
 
+# Autoresearch session files (benchmark harness, experiment log)
+.auto/
+
 # One-shot migration helper for output scraped before the link-encoding fix
 fix_md_links.py

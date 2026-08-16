@@ -46,12 +46,15 @@ Run:
 """
 
 import argparse
+import concurrent.futures
 import html as H
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -372,14 +375,195 @@ def localize_audio(session, body_html, folder, base, used):
     return body_html, names
 
 
-def download_video(vid, dest_mp4):
-    """Mux the HLS stream to `dest_mp4`, atomically.
+HLS_WORKERS = 8  # parallel segment connections; measured sweet spot on the CDN
 
-    ffmpeg is writing a growing file, so a run killed mid-video leaves a non-empty but
-    truncated .mp4 — which the resume check would then read as "already downloaded" and
-    skip forever. Writing to `.part` and renaming on success means the final name only
-    ever exists for a complete video. `-f mp4` is required because the `.part`
-    extension gives ffmpeg no format to infer.
+# Instrumentation for benchmarks: (bytes, seconds) of the *transfer* phase of the
+# most recent native video download. Lets measure.sh report net-vs-mux split.
+_LAST_NET = None
+
+# A separate curl Session per worker thread: curl_cffi Sessions are not safe to
+# share across threads when each request can block, and a fresh Session per
+# request would redo TLS. 8 threads x one pinned Session = 8 parallel
+# connections (HTTP/2 streams), which saturates the CDN/line on this setup.
+_thread_local = threading.local()
+
+
+def _thread_session():
+    s = getattr(_thread_local, "session", None)
+    if s is None:
+        s = creq.Session(impersonate="chrome124")
+        _thread_local.session = s
+    return s
+
+
+def _hls_variant_uri(master_text):
+    """Highest-bandwidth non-I-FRAME variant URI from a master playlist."""
+    best = None
+    for i, line in enumerate(master_text.splitlines()):
+        if line.startswith("#EXT-X-STREAM-INF") and "I-FRAME" not in line:
+            m = re.search(r"BANDWIDTH=(\d+)", line)
+            if m and (best is None or int(m.group(1)) > best[0]):
+                best = (int(m.group(1)), master_text.splitlines()[i + 1])
+    return best
+
+
+def _download_hls_native(master_url, dest_mp4):
+    """Download all HLS segments in parallel, then mux them locally to mp4.
+
+    ffmpeg's own HLS demuxer only opens 1-2 segment connections, so a single
+    stream limps at a few MB/s even on fast lines. Fetching every segment with
+    `HLS_WORKERS` parallel Sessions saturates the CDN instead, and the one
+    local ffmpeg pass (concat + `-c copy`) turns the segments into the same
+    mp4 the old path produced. Raises on anything it can't handle (encrypted
+    or live playlists, empty segment lists, mux failure) so the caller can
+    fall back to ffmpeg's own demuxer.
+    """
+    global _LAST_NET
+    sess = creq.Session(impersonate="chrome124")
+    r = sess.get(master_url, timeout=60)
+    r.raise_for_status()
+    master_final = str(r.url)  # after redirects; child URIs resolve against this
+    best = _hls_variant_uri(r.text)
+    if best is None:
+        raise ValueError("no usable HLS variant in master playlist")
+    child_url = urllib.parse.urljoin(master_final, best[1])
+    rc = sess.get(child_url, timeout=60)
+    rc.raise_for_status()
+    child = rc.text
+    if "#EXT-X-KEY" in child:
+        raise ValueError("encrypted segments (EXT-X-KEY) — ffmpeg handles these")
+    if "#EXT-X-ENDLIST" not in child:
+        raise ValueError("live playlist (no ENDLIST) — ffmpeg handles these")
+    seg_urls = [urllib.parse.urljoin(str(rc.url), line)
+                for line in child.splitlines() if line and not line.startswith("#")]
+    if not seg_urls:
+        raise ValueError("segment list is empty")
+
+    tmp = tempfile.mkdtemp(prefix="flhls-", dir=os.path.dirname(dest_mp4))
+    part = dest_mp4 + ".part"
+    total = [0]
+    net_s = 0.0
+    ok = False
+    try:
+        # Estimate the total size for a determinate bar from the playlist
+        # itself (variant bitrate x summed durations) — cheaper than HEADing
+        # every segment, and the estimate is within a few percent.
+        dur = sum(float(x) for x in re.findall(r"#EXTINF:([0-9.]+)", child))
+        total_hint = int(best[0] / 8 * dur) if dur else 0
+
+        # Parallel segment download. `last`/`total` are only touched by the
+        # main thread (as_completed loop), so no locking is needed. `ready[i]`
+        # is signalled once segment i is fully on disk so the mux feeder can
+        # consume segments in order as they arrive.
+        def _dl(iu):
+            i, u = iu
+            res = _thread_session().get(u, timeout=120, stream=True)
+            res.raise_for_status()
+            n = 0
+            with open(os.path.join(tmp, f"seg_{i:05d}.ts"), "wb") as fh:
+                for chunk in res.iter_content(chunk_size=1 << 16):
+                    fh.write(chunk)
+                    n += len(chunk)
+            ready[i].set()
+            return n
+        ready = [threading.Event() for _ in seg_urls]
+        seg_paths = [os.path.join(tmp, f"seg_{i:05d}.ts") for i in range(len(seg_urls))]
+        dl_failed = threading.Event()
+
+        # Mux directly off the arriving segments: pipe each finished segment
+        # into ffmpeg in playlist order. Download (2s) and mux (1s) overlap,
+        # so the mux pass is almost entirely hidden behind the transfer.
+        def _feed(stdin):
+            try:
+                for i, p in enumerate(seg_paths):
+                    # poll so a failed download aborts the mux promptly
+                    while not ready[i].is_set() and not dl_failed.is_set():
+                        time.sleep(0.01)
+                    if dl_failed.is_set():
+                        return
+                    with open(p, "rb") as fh:
+                        while True:
+                            chunk = fh.read(1 << 18)
+                            if not chunk:
+                                break
+                            stdin.write(chunk)
+            finally:
+                try:
+                    stdin.close()
+                except Exception:
+                    pass
+
+        t0 = time.perf_counter()
+        with tqdm(total=total_hint or None, unit="B", unit_scale=True,
+                  desc=os.path.basename(dest_mp4), leave=False) as bar:
+            cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "mpegts", "-i", "pipe:0",
+                   "-c", "copy", "-bsf:a", "aac_adtstoasc", "-movflags", "+faststart",
+                   "-f", "mp4", part]
+            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            # Read stderr on a side thread: Popen.communicate() would try to
+            # flush+close stdin, but the feeder thread owns stdin (it closes it
+            # on EOF), which makes communicate() raise. Drain stderr instead
+            # so -loglevel error output can never fill the 64KB pipe.
+            stderr_io = []
+            def _read_err():
+                stderr_io.append(proc.stderr.read())
+            err_reader = threading.Thread(target=_read_err, daemon=True)
+            err_reader.start()
+            feeder = threading.Thread(target=_feed, args=(proc.stdin,), daemon=True)
+            feeder.start()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=HLS_WORKERS) as ex:
+                futs = [ex.submit(_dl, (i, u)) for i, u in enumerate(seg_urls)]
+                try:
+                    for f in concurrent.futures.as_completed(futs):
+                        n = f.result()  # propagates download errors
+                        total[0] += n
+                        bar.update(n)
+                except Exception:
+                    dl_failed.set()
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                    raise
+            feeder.join()
+            proc.wait(timeout=600)
+            err_reader.join(timeout=5)
+            stderr = (stderr_io[0] if stderr_io else b"").decode("utf-8", "replace")
+        net_s = time.perf_counter() - t0
+        if proc.returncode != 0 or not (os.path.exists(part)
+                                         and os.path.getsize(part) > 0):
+            raise ValueError(f"ffmpeg mux failed: {stderr.strip()[:300]}")
+        # Backstop: a truncated/error-muxed file must not be renamed into place.
+        # ffprobe costs ~0.2s and catches streams that muxed off-bounds.
+        dura = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=nw=1:nk=1", part],
+            capture_output=True, text=True, timeout=30)
+        try:
+            got = float(dura.stdout.strip())
+        except ValueError:
+            got = 0.0
+        if got <= 0 or (dur and abs(got - dur) / dur > 0.05):
+            raise ValueError(f"muxed duration {got:.1f}s vs playlist {dur:.1f}s")
+        os.replace(part, dest_mp4)
+        ok = True
+        return True
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+        if os.path.exists(part):
+            os.remove(part)
+        if ok:
+            _LAST_NET = (total[0], net_s)
+
+
+def _download_video_ffmpeg(vid, dest_mp4):
+    """Fallback: let ffmpeg's own demuxer fetch and mux the HLS stream.
+
+    Used when the native parallel path can't handle the playlist (encrypted
+    segments, live streams, unexpected structure). Slower on fast lines but
+    maximally compatible. Still writes `.part` and renames on success, so an
+    interrupted run never leaves a truncated file under the final name.
     """
     url = f"https://view.vzaar.com/{vid}/adaptive.m3u8"
     part = dest_mp4 + ".part"
@@ -413,6 +597,31 @@ def download_video(vid, dest_mp4):
         if os.path.exists(part):
             os.remove(part)
     return ok
+
+
+def download_video(vid, dest_mp4):
+    """Mux the HLS stream to `dest_mp4`, atomically.
+
+    Native path first: fetch the playlists, download every segment in parallel
+    (see `_download_hls_native`), then one local ffmpeg pass to mux. Falls back
+    to ffmpeg's own HLS demuxer (`_download_video_ffmpeg`) for streams the
+    native path can't handle.
+
+    ffmpeg is writing a growing file, so a run killed mid-video leaves a non-empty but
+    truncated .mp4 — which the resume check would then read as "already downloaded" and
+    skip forever. Writing to `.part` and renaming on success means the final name only
+    ever exists for a complete video. `-f mp4` is required because the `.part`
+    extension gives ffmpeg no format to infer.
+    """
+    global _LAST_NET
+    _LAST_NET = None
+    try:
+        return _download_hls_native(f"https://view.vzaar.com/{vid}/adaptive.m3u8",
+                                    dest_mp4)
+    except Exception as e:
+        print(f"      ! native HLS download failed ({e}); using ffmpeg instead",
+              file=sys.stderr)
+        return _download_video_ffmpeg(vid, dest_mp4)
 
 
 # ---------------------------------------------------------------------------
