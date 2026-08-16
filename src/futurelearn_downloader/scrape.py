@@ -487,17 +487,18 @@ def build_step_markdown(title, data, title_sane, sub_links, download_links,
         # The first paragraph is FutureLearn's step overview: promote it to a subtitle (##)
         # only when it's a genuinely short one-liner; a longer multi-sentence summary reads
         # wrong as a heading, so render it as a blockquote instead. A paragraph carrying an
-        # audio player is left alone (no player in a heading/blockquote).
+        # audio player, or a body that already opens with a heading (e.g. a poll's H2), is
+        # left alone.
         if "\n\n" in body_md and "<audio" not in body_md.split("\n\n", 1)[0]:
             lead, rest = body_md.split("\n\n", 1)
             lead = lead.strip()
-            if _lead_is_short(lead):
-                lines.append(f"## {lead}")
+            if lead.startswith("#"):
+                lines.append(body_md)
             else:
-                lines.append(_blockquote(lead))
-            lines.append("")
-            if rest.strip():
-                lines.append(rest.strip())
+                lines.append(f"## {lead}" if _lead_is_short(lead) else _blockquote(lead))
+                lines.append("")
+                if rest.strip():
+                    lines.append(rest.strip())
         else:
             lines.append(body_md)
         lines.append("")
