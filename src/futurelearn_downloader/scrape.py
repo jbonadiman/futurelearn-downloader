@@ -458,6 +458,22 @@ def scrape_quiz(session, step_url, folder, base, used, delay=0.3):
     return lines
 
 
+SENTENCE_BOUNDARY_RE = re.compile(r'[.!?]\s+[A-Z0-9"“]')
+
+
+def _lead_is_short(lead, max_len=140):
+    """True when the lead reads as a subtitle (one short sentence) rather than an overview."""
+    text = lead.strip()
+    if len(text) > max_len:
+        return False
+    return not SENTENCE_BOUNDARY_RE.search(text)
+
+
+def _blockquote(text):
+    """Render a paragraph as a Markdown blockquote."""
+    return "> " + text.replace("\n", "\n> ")
+
+
 def build_step_markdown(title, data, title_sane, sub_links, download_links,
                         audio_files=(), quiz_lines=()):
     lines = [f"# {title}", ""]
@@ -468,11 +484,17 @@ def build_step_markdown(title, data, title_sane, sub_links, download_links,
 
     if data["body_html"]:
         body_md = body_to_markdown(data["body_html"], audio_files)
-        # The first paragraph is a lead/subtitle under the H1 title — promote it to H2,
-        # unless it carries an audio player (a heading is no place for one).
+        # The first paragraph is FutureLearn's step overview: promote it to a subtitle (##)
+        # only when it's a genuinely short one-liner; a longer multi-sentence summary reads
+        # wrong as a heading, so render it as a blockquote instead. A paragraph carrying an
+        # audio player is left alone (no player in a heading/blockquote).
         if "\n\n" in body_md and "<audio" not in body_md.split("\n\n", 1)[0]:
             lead, rest = body_md.split("\n\n", 1)
-            lines.append(f"## {lead.strip()}")
+            lead = lead.strip()
+            if _lead_is_short(lead):
+                lines.append(f"## {lead}")
+            else:
+                lines.append(_blockquote(lead))
             lines.append("")
             if rest.strip():
                 lines.append(rest.strip())
