@@ -524,9 +524,8 @@ def build_step_markdown(title, data, title_sane, sub_links, download_links,
 
 
 def build_toc(root_name, items, locked=()):
-    """Render the ToC. Locked weeks are annotated in place when they were scraped
-    anyway, and listed as unlinked placeholders when they were skipped."""
-    unlock_by_week = {name: when for name, _, when in locked}
+    """Render the ToC. Locked weeks are saved as normal headings; weeks skipped via
+    --skip-locked are listed as unlinked placeholders."""
     scraped_weeks = {parts[0] for parts, _ in items}
     lines = [f"# {root_name}", ""]
     cur_week = cur_act = None
@@ -535,9 +534,7 @@ def build_toc(root_name, items, locked=()):
         title = mf.sanitize(step.get("title", ""))
         rel = os.path.join(week, act, stepdir, f"{title}.md")
         if week != cur_week:
-            note = unlock_by_week.get(week)
-            lines.append(f"## {week}" + (f" — not yet released publicly (unlocks {note})"
-                                         if note else ""))
+            lines.append(f"## {week}")
             lines.append("")
             cur_week, cur_act = week, None
         if act != cur_act:

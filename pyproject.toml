@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "futurelearn-downloader"
-version = "0.2.0"
+version = "0.2.1"
 description = "Download a FutureLearn course you're enrolled in to a local folder tree (Markdown + media)"
 readme = "README.md"
 requires-python = ">=3.9"
