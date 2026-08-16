@@ -103,7 +103,7 @@ def extract_weeks(html_text: str):
                 m = sm
                 break
         else:
-            raise SystemExit("Could not find a course structure in this HTML file.")
+            raise ValueError("Could not find a course structure in this HTML.")
     return json.loads(m.group(1))["courseContent"]["weeks"]
 
 

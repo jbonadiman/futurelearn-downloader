@@ -39,6 +39,9 @@ downloaded, so it resumes cleanly).
 Run:
     futurelearn page.html --cookies cookies.txt -o /path/out
 
+    # or download several courses from a list of URLs (one per line):
+    futurelearn --links courses.txt --cookies cookies.txt -o /path/out
+
 (or, without installing: `python -m futurelearn_downloader page.html --cookies cookies.txt`)
 """
 
@@ -559,28 +562,8 @@ def build_toc(root_name, items, locked=()):
 # Main
 # ---------------------------------------------------------------------------
 
-def main():
-    ap = argparse.ArgumentParser(description="Scrape a FutureLearn course to folders + markdown.")
-    ap.add_argument("html_file", nargs="?", default="page.html")
-    ap.add_argument("--cookies", required=True)
-    ap.add_argument("-o", "--out", default=".")
-    ap.add_argument("--limit", type=int, default=0, help="process first N steps (0=all)")
-    ap.add_argument("--delay", type=float, default=0.3)
-    ap.add_argument("--skip-video", action="store_true")
-    ap.add_argument("--skip-subs", action="store_true")
-    ap.add_argument("--skip-downloads", action="store_true")
-    ap.add_argument("--skip-audio", action="store_true", help="don't localise inline audio clips")
-    ap.add_argument("--skip-quiz", action="store_true", help="don't scrape quiz/test questions")
-    ap.add_argument("--force", action="store_true",
-                    help="re-scrape steps that are already complete (default: skip them)")
-    ap.add_argument("--skip-locked", action="store_true",
-                    help="take only released weeks (default: scrape locked ones too)")
-    ap.add_argument("--dry-run", action="store_true")
-    args = ap.parse_args()
-
-    with open(args.html_file, encoding="utf-8", errors="replace") as fh:
-        html_text = fh.read()
-
+def scrape_one(html_text, session, args):
+    """Scrape a single course from a page whose HTML embeds the course tree."""
     weeks = mf.extract_weeks(html_text)
     root_name = mf.sanitize(mf.extract_run_title(html_text))
     root = os.path.join(args.out, root_name)
@@ -610,7 +593,6 @@ def main():
         print(f"Would scrape {len(items)} step(s) into: {root}")
         return
 
-    session = make_session(parse_cookies(args.cookies))
     video_jobs = []  # (vzaarVideoId, dest) — deferred to phase 2 (no cookies needed)
     skipped = 0
 
@@ -715,6 +697,106 @@ def main():
         else:
             print(f"WARNING: included {len(locked)} week(s) not yet released to you "
                   f"({nxt}).")
+
+
+# ---------------------------------------------------------------------------
+# CLI entry point
+# ---------------------------------------------------------------------------
+
+STEP_URL_RE = re.compile(r'/courses/[A-Za-z0-9._~-]+/\d+/steps/\d+')
+
+
+def read_links(path):
+    """Read a file of one course URL per line, skipping blanks and # comments."""
+    urls = []
+    with open(path, encoding="utf-8") as fh:
+        for ln in fh:
+            ln = ln.strip()
+            if ln and not ln.startswith("#"):
+                urls.append(ln)
+    return list(dict.fromkeys(urls))  # preserve order, drop exact duplicates
+
+
+def has_course_tree(html_text):
+    try:
+        mf.extract_weeks(html_text)
+        return True
+    except ValueError:
+        return False
+
+
+def fetch_course_page(session, url):
+    """Fetch a course URL and return HTML that carries the course tree.
+
+    The tree lives in the course-content sidebar, present on a course's home and step
+    pages. If the given URL doesn't render it (an overview or marketing page), follow the
+    first step link found in the page instead.
+    """
+    html_text = fetch_text(session, url)
+    if has_course_tree(html_text):
+        return html_text
+    m = STEP_URL_RE.search(html_text)
+    if m:
+        step_url = urllib.parse.urljoin(url, m.group(0))
+        print(f"  (no course tree here; following {step_url})")
+        return fetch_text(session, step_url)
+    return html_text  # let scrape_one raise the real error
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="Scrape one or more FutureLearn courses to folders + markdown.")
+    ap.add_argument("html_file", nargs="?", default="page.html",
+                    help="saved course page (single-course mode)")
+    ap.add_argument("--links", metavar="FILE",
+                    help="file with one course URL per line; downloads each "
+                         "(blank lines and # comments ignored)")
+    ap.add_argument("--cookies", required=True)
+    ap.add_argument("-o", "--out", default=".")
+    ap.add_argument("--limit", type=int, default=0, help="process first N steps (0=all)")
+    ap.add_argument("--delay", type=float, default=0.3)
+    ap.add_argument("--skip-video", action="store_true")
+    ap.add_argument("--skip-subs", action="store_true")
+    ap.add_argument("--skip-downloads", action="store_true")
+    ap.add_argument("--skip-audio", action="store_true", help="don't localise inline audio clips")
+    ap.add_argument("--skip-quiz", action="store_true", help="don't scrape quiz/test questions")
+    ap.add_argument("--force", action="store_true",
+                    help="re-scrape steps that are already complete (default: skip them)")
+    ap.add_argument("--skip-locked", action="store_true",
+                    help="take only released weeks (default: scrape locked ones too)")
+    ap.add_argument("--dry-run", action="store_true")
+    args = ap.parse_args()
+
+    if args.links:
+        urls = read_links(args.links)
+        if not urls:
+            raise SystemExit(f"No course URLs found in {args.links}")
+        session = make_session(parse_cookies(args.cookies))
+        for url in urls:
+            print(f"\n=== {url} ===")
+            try:
+                html_text = fetch_course_page(session, url)
+            except Exception as e:
+                print(f"! failed to fetch {url}: {e}", file=sys.stderr)
+                continue
+            try:
+                scrape_one(html_text, session, args)
+            except ValueError as e:
+                print(f"! {url}: {e}", file=sys.stderr)
+                continue
+    else:
+        try:
+            with open(args.html_file, encoding="utf-8", errors="replace") as fh:
+                html_text = fh.read()
+        except FileNotFoundError:
+            raise SystemExit(
+                f"No such file: {args.html_file}. Pass a saved course page, or use "
+                f"--links FILE to download from a list of course URLs.")
+        session = None if args.dry_run else make_session(parse_cookies(args.cookies))
+        try:
+            scrape_one(html_text, session, args)
+        except ValueError as e:
+            raise SystemExit(str(e))
 
 
 if __name__ == "__main__":

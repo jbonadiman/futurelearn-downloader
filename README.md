@@ -39,16 +39,36 @@ futurelearn page.html --cookies cookies.txt -o ~/Courses
 
 (Without installing: `python -m futurelearn_downloader page.html --cookies cookies.txt -o ~/Courses`.)
 
+### Download several courses at once
+
+Put one course URL per line in a file and pass it with `--links` — blank lines and
+`#` comments are ignored, and each course is saved under its own title folder:
+
+```bash
+futurelearn --links courses.txt --cookies cookies.txt -o ~/Courses
+```
+
+```
+# courses.txt
+https://www.futurelearn.com/courses/japanese-rare-books-culture/7
+https://www.futurelearn.com/courses/chinese-pronunciation-tone/5
+```
+
+The URL can be a course home page or a step page; if it doesn't render the course tree
+directly, the first step link in the page is followed automatically.
+
 No headless browser required.
 
 ### Options
 
 | flag | effect |
 |------|--------|
+| `--links FILE` | download every course URL in `FILE` (one per line) |
 | `--limit N` | only process the first N steps |
 | `--skip-video` / `--skip-subs` / `--skip-downloads` | skip a media type |
 | `--skip-audio` | leave inline audio clips as remote links |
 | `--skip-quiz` | don't scrape quiz/test questions |
+| `--skip-locked` | take only released weeks (default: scrape locked ones too) |
 | `--delay SEC` | pause between step pages (default 0.3) |
 | `--force` | re-scrape steps that are already complete (default: skip them) |
 | `--dry-run` | print the plan, do nothing |
