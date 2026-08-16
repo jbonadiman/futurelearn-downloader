@@ -146,13 +146,36 @@ def extract_run_title(html_text: str) -> str:
     return m.group(1) if m else "course"
 
 
-def collect_steps(weeks):
-    """Flatten weeks -> activities -> steps into (folder_parts, step) tuples."""
+def week_folder_name(week):
+    wnum = week.get("number", "")
+    wtitle = sanitize(week.get("title", ""))
+    return f"Week {wnum} - {wtitle}" if wtitle else f"Week {wnum}"
+
+
+def locked_weeks(weeks):
+    """Weeks not yet released, as [(folder_name, number, unlocks_at)].
+
+    The week-level `locked` flag is the only reliable signal. On a drip-fed course
+    every step still reports `isLocked: false`, even inside a locked week, so a
+    per-step check finds nothing and the whole course looks available.
+    """
+    return [(week_folder_name(w), w.get("number", ""), w.get("weekUnlocksAt") or "")
+            for w in weeks if w.get("locked")]
+
+
+def collect_steps(weeks, include_locked=True):
+    """Flatten weeks -> activities -> steps into (folder_parts, step) tuples.
+
+    A locked week's steps still serve their real content to an enrolled session — the
+    lock is a UI gate on the drip-feed schedule, not a server-side restriction — so they
+    are included by default and the caller warns about them (see `locked_weeks`).
+    Pass `include_locked=False` to take only what has been released.
+    """
     items = []
     for week in weeks:
-        wnum = week.get("number", "")
-        wtitle = sanitize(week.get("title", ""))
-        week_name = f"Week {wnum} - {wtitle}" if wtitle else f"Week {wnum}"
+        if week.get("locked") and not include_locked:
+            continue
+        week_name = week_folder_name(week)
         for ai, activity in enumerate(week.get("activities", []), start=1):
             atitle = sanitize(activity.get("title", ""))
             act_name = f"{ai}. {atitle}" if atitle else f"{ai}."

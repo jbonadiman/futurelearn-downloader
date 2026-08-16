@@ -519,7 +519,11 @@ def build_step_markdown(title, data, title_sane, sub_links, download_links,
     return "\n".join(lines).rstrip() + "\n"
 
 
-def build_toc(root_name, items):
+def build_toc(root_name, items, locked=()):
+    """Render the ToC. Locked weeks are annotated in place when they were scraped
+    anyway, and listed as unlinked placeholders when they were skipped."""
+    unlock_by_week = {name: when for name, _, when in locked}
+    scraped_weeks = {parts[0] for parts, _ in items}
     lines = [f"# {root_name}", ""]
     cur_week = cur_act = None
     for parts, step in items:
@@ -527,7 +531,9 @@ def build_toc(root_name, items):
         title = mf.sanitize(step.get("title", ""))
         rel = os.path.join(week, act, stepdir, f"{title}.md")
         if week != cur_week:
-            lines.append(f"## {week}")
+            note = unlock_by_week.get(week)
+            lines.append(f"## {week}" + (f" — not yet released publicly (unlocks {note})"
+                                         if note else ""))
             lines.append("")
             cur_week, cur_act = week, None
         if act != cur_act:
@@ -535,6 +541,15 @@ def build_toc(root_name, items):
             lines.append("")
             cur_act = act
         lines.append(f"- [{stepdir}]({url_path(rel)})")
+    # Skipped weeks are listed but unlinked — their folders don't exist, so a link 404s.
+    for wname, wnum, when in locked:
+        if wname in scraped_weeks:
+            continue
+        lines.append("")
+        lines.append(f"## {wname}")
+        lines.append("")
+        lines.append(f"*Not yet released — unlocks {when}.*" if when
+                     else "*Not yet released.*")
     lines.append("")
     return "\n".join(lines)
 
@@ -557,6 +572,8 @@ def main():
     ap.add_argument("--skip-quiz", action="store_true", help="don't scrape quiz/test questions")
     ap.add_argument("--force", action="store_true",
                     help="re-scrape steps that are already complete (default: skip them)")
+    ap.add_argument("--skip-locked", action="store_true",
+                    help="take only released weeks (default: scrape locked ones too)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -566,7 +583,21 @@ def main():
     weeks = mf.extract_weeks(html_text)
     root_name = mf.sanitize(mf.extract_run_title(html_text))
     root = os.path.join(args.out, root_name)
-    items = mf.collect_steps(weeks)
+    items = mf.collect_steps(weeks, include_locked=not args.skip_locked)
+    locked = mf.locked_weeks(weeks)
+
+    if locked:
+        verb = "skipping" if args.skip_locked else "scraping anyway"
+        print(f"WARNING: {len(locked)} week(s) not yet released to you — {verb}:")
+        for wname, wnum, when in locked:
+            print(f"  - Week {wnum}: {wname}" + (f"  (unlocks {when})" if when else ""))
+        if args.skip_locked:
+            print("Re-run after they open; completed steps are skipped, so only the new "
+                  "weeks are fetched.\n")
+        else:
+            print("WARNING: these weeks are gated in the UI but their content is still\n"
+                  "         served to an enrolled session, so it is being downloaded now.\n"
+                  "         Pass --skip-locked to take only what has been released.\n")
 
     for parts, _ in items:
         os.makedirs(os.path.join(root, *parts), exist_ok=True)
@@ -670,12 +701,19 @@ def main():
         download_video(vid, dest)
 
     # ---- ToC ----
-    toc = build_toc(root_name, items)
+    toc = build_toc(root_name, items, locked)
     with open(os.path.join(root, "ToC.md"), "w", encoding="utf-8") as fh:
         fh.write(toc)
 
     print(f"\nDone. Course saved under: {root}"
           + (f" ({skipped} step(s) already complete, skipped)" if skipped else ""))
+    if locked:
+        nxt = ", ".join(f"Week {n} on {w}" if w else f"Week {n}" for _, n, w in locked)
+        if args.skip_locked:
+            print(f"Still locked: {nxt}. Re-run then to pick them up.")
+        else:
+            print(f"WARNING: included {len(locked)} week(s) not yet released to you "
+                  f"({nxt}).")
 
 
 if __name__ == "__main__":
