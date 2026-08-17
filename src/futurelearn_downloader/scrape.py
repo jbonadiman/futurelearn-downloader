@@ -712,6 +712,30 @@ def _blockquote(text):
     return "> " + text.replace("\n", "\n> ")
 
 
+TITLE_QUOTE_RE = re.compile(r'["\'“”‘’《》「」『』]')
+TITLE_TRAILING_RE = re.compile(r'[\s?.!:]+$')
+
+
+def _normalize_heading(text):
+    """Strip quoting/punctuation noise so a straight-quoted title and the same title
+    rendered with curly quotes (or wrapped in a book title mark) compare as equal."""
+    text = TITLE_QUOTE_RE.sub("", text)
+    return TITLE_TRAILING_RE.sub("", text.strip()).casefold()
+
+
+def _is_redundant_h1(lead, title):
+    """True when body's own opening H1 just repeats the step title, as external articles
+    (FutureLearn's `Article reading` steps) often do by carrying their original heading
+    into the fetched body — printing both looks like a duplicated header."""
+    if not lead.startswith("# "):
+        return False
+    heading = _normalize_heading(lead[2:])
+    step_title = _normalize_heading(title)
+    return bool(heading) and bool(step_title) and (
+        heading == step_title or heading.startswith(step_title) or step_title.startswith(heading)
+    )
+
+
 def build_step_markdown(title, data, title_sane, sub_links, download_links,
                         audio_files=(), quiz_lines=()):
     lines = [f"# {title}", ""]
@@ -726,11 +750,13 @@ def build_step_markdown(title, data, title_sane, sub_links, download_links,
         # only when it's a genuinely short one-liner; a longer multi-sentence summary reads
         # wrong as a heading, so render it as a blockquote instead. A paragraph carrying an
         # audio player, or a body that already opens with a heading (e.g. a poll's H2), is
-        # left alone.
+        # left alone — unless that heading just repeats the title we already printed above.
         if "\n\n" in body_md and "<audio" not in body_md.split("\n\n", 1)[0]:
             lead, rest = body_md.split("\n\n", 1)
             lead = lead.strip()
-            if lead.startswith("#"):
+            if _is_redundant_h1(lead, title):
+                lines.append(rest.strip())
+            elif lead.startswith("#"):
                 lines.append(body_md)
             else:
                 lines.append(f"## {lead}" if _lead_is_short(lead) else _blockquote(lead))
