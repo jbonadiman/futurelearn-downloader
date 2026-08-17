@@ -1,7 +1,7 @@
 # futurelearn-downloader
 
 Downloads a FutureLearn course you are enrolled in into a local folder tree: Markdown pages,
-videos, subtitles, inline audio clips, quiz questions, PDF/audio downloads, and a ToC.
+videos, subtitles, inline audio clips, inline images, quiz questions, PDF/audio downloads, and a ToC.
 
 Built for offline study of a course you already have access to. It authenticates as *you*,
 via your own browser cookies, and never submits answers or touches course state.
@@ -96,6 +96,8 @@ against current Cloudflare). Fingerprint impersonation is what actually resolves
 Runs are resumable — just run the same command again. A step is treated as done when its
 Markdown page exists *and* every local file that page links to is present and non-empty; the
 Markdown is written last and references every asset, so it doubles as the step's manifest.
+Cross-references to *other* steps' Markdown pages don't count toward that check — they point at
+files produced by those steps, not assets this step owns.
 A completed step costs no requests at all, so a re-run over a finished course takes a fraction
 of a second instead of one fetch per step plus one per quiz question.
 
@@ -139,6 +141,16 @@ Learn Chinese - Introduction to Chinese Pronunciation and Tone/
 - **Inline audio** (`[Click to listen](…mp3)` links and FutureLearn's `soundcite` players) is
   downloaded as `<step>-audio-N.mp3` and embedded as `<audio controls src="…">`, the same way
   videos are. It lives in the body HTML, not in `relatedFiles`, so it needs separate handling.
+- **Inline images** (body `<img>` tags and “take a closer look” links that point straight at an
+  image) are downloaded into the step folder and re-linked locally, so a course renders fully
+  offline instead of hot-linking the partner CDN (`fl-keio.info` and friends).
+- **Related links** (`relatedLinks`, rendered as a `## Related links` section) are followed to
+  their final redirect target first. FutureLearn serves them as `/links/l/<id>` short links that
+  302 to the real page; the short link is stored as-is by a naive scraper and 404s once the
+  course is served from anywhere else.
+- **Step-to-step links** are rewritten to local paths. Glossary keyword links (e.g. a video step
+  linking every term to its week's glossary `…/steps/<id>#k`) and “see step N.M” references
+  point at the local `…/Step.md#anchor` instead of `futurelearn.com`, so they work offline.
 - **Quizzes and tests** are scraped into a `## Quiz` section: one `### Question N` per question,
   answers as `- [ ]` checkboxes, question audio embedded. Cloze ("fill in the blanks") questions
   render the text with `**[n]**` gap markers plus a blank answer list.

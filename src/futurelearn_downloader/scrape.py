@@ -81,6 +81,12 @@ EXT_MAP = {
     "ppt": ".ppt", "pptx": ".pptx", "zip": ".zip", "txt": ".txt",
 }
 
+# Inline images in body HTML: `<img src="…">` and "take a closer look" `<a href>`
+# links that point straight at an image on the partner CDN.
+IMG_TAG_SRC_RE = re.compile(r'<img\b[^>]*?\bsrc\s*=\s*(["\'])(.*?)\1', re.I | re.S)
+A_TAG_HREF_RE = re.compile(r'<a\b[^>]*?\bhref\s*=\s*(["\'])(.*?)\1', re.I | re.S)
+IMAGE_EXT_RE = re.compile(r'\.(?:png|jpe?g|gif|webp|bmp|svg|avif|ico)$', re.I)
+
 
 def parse_cookies(path):
     """Netscape cookies.txt -> flat {name: value} dict (all cookies are futurelearn-scoped)."""
@@ -150,11 +156,19 @@ REMOTE_DEST_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:|^#|^/")
 
 
 def local_refs(md_text):
-    """Local files referenced by a step page (link targets + <video>/<audio> src)."""
+    """Local files referenced by a step page (link targets + <video>/<audio> src).
+
+    Markdown pages that link to *other* step pages (`.md`) are excluded: those are
+    cross-references, not assets this step produced, so they must not gate the resume
+    check (a later step's page can legitimately not exist yet).
+    """
     for m in list(MD_LINK_RE.finditer(md_text)) + list(MD_SRC_RE.finditer(md_text)):
         dest = m.group(1)
         if not REMOTE_DEST_RE.match(dest):
-            yield urllib.parse.unquote(dest)
+            dest = urllib.parse.unquote(dest)
+            if dest.lower().endswith((".md", ".markdown")):
+                continue
+            yield dest
 
 
 def step_is_complete(md_path):
@@ -196,6 +210,49 @@ def body_to_markdown(body_html, audio_files=()):
             # keep the clip reachable rather than silently dropping it.
             md = (md + "\n\n" + player).strip()
     return md
+
+
+def build_step_link_map(items):
+    """Map each step's URL (relative and absolute) to its local Markdown path.
+
+    `items` is `collect_steps()` output: `(folder_parts, step)` tuples. The map lets us
+    rewrite the FutureLearn step links that appear in step bodies (glossary keyword
+    links, "see step N.M", …) so they point at the local `.md` file instead of the
+    live course URL.
+    """
+    m = {}
+    for parts, step in items:
+        rel = os.path.join(*parts, f"{mf.sanitize(step.get('title', ''))}.md")
+        href = step.get("href", "")
+        if href:
+            m[href] = rel
+            if href.startswith("/"):
+                m[mf.BASE_URL + href] = rel
+    return m
+
+
+def localize_step_links(html_text, link_map, from_dir):
+    """Rewrite step links in body HTML to local relative Markdown paths.
+
+    `from_dir` is the folder (relative to the course root) that holds the page being
+    generated, so each target becomes a `../…/page.md` path valid from that folder.
+    Fragment anchors (`#t`, `#japanese-history-overview`) are preserved.
+    """
+    def repl(m):
+        quote = m.group(1)
+        url = m.group(2).strip()
+        frag = ""
+        if "#" in url:
+            url, frag = url.split("#", 1)
+        if url in link_map:
+            rel = os.path.relpath(link_map[url], from_dir)
+            new = url_path(rel)
+            if frag:
+                new += "#" + frag
+            return f'href={quote}{new}{quote}'
+        return m.group(0)
+
+    return re.sub(r'href\s*=\s*(["\'])([^"\']+)\1', repl, html_text, flags=re.I)
 
 
 def extract_quiz(html_text):
@@ -341,6 +398,35 @@ def download_related(session, link_url, ftype, title_sane, folder, used):
     return fname
 
 
+def resolve_final_url(session, url):
+    """Follow redirects and return the final URL, falling back to the input on error.
+
+    FutureLearn's `relatedLinks[].url` values are `/links/l/<id>` short links that 302
+    to the real destination. Storing the short link in the Markdown produces a dead
+    link once the course is served outside FutureLearn, so we resolve it here with a
+    cheap HEAD-style GET (streamed, body never read).
+    """
+    try:
+        r = session.get(url, timeout=60, stream=True)
+        final = r.url
+        r.close()
+        return final
+    except Exception:
+        return url
+
+
+def resolve_related_links(session, related_links):
+    """Return `relatedLinks` with every `url` rewritten to its final redirect target."""
+    out = []
+    for lnk in related_links:
+        url = lnk.get("url", "")
+        title = lnk.get("title", url or "link")
+        if url.startswith("/"):
+            url = mf.BASE_URL + url
+        out.append({"title": title, "url": resolve_final_url(session, url)})
+    return out
+
+
 def localize_audio(session, body_html, folder, base, used):
     """Download every inline audio clip in `body_html` and rewrite its URL to the local
     filename. Returns `(html, [filenames])` in document order — pass the filenames to
@@ -373,6 +459,50 @@ def localize_audio(session, body_html, folder, base, used):
         names.append(fname)
         body_html = body_html.replace(raw, fname)
     return body_html, names
+
+
+def _image_ext(url):
+    """Extension (with dot) when `url` points at an image, else empty string."""
+    path = urllib.parse.urlsplit(url).path
+    m = IMAGE_EXT_RE.search(path)
+    return m.group(0) if m else ""
+
+
+def localize_images(session, body_html, folder, base, used):
+    """Download inline `<img>` and image-link targets and rewrite them to local files.
+
+    FutureLearn step bodies embed images on the partner CDN (`fl-keio.info` etc.) and
+    "take a closer look" links that point straight at those images. Leaving them as
+    remote URLs breaks a fully-offline copy, so each unique image is fetched once and
+    every `src`/`href` that referenced it is rewritten to the local file, the same way
+    inline audio clips are localised.
+    """
+    urls = []
+    for m in IMG_TAG_SRC_RE.finditer(body_html):
+        u = m.group(2).strip()
+        if u and u not in urls:
+            urls.append(u)
+    for m in A_TAG_HREF_RE.finditer(body_html):
+        u = m.group(2).strip()
+        if u and _image_ext(u) and u not in urls:
+            urls.append(u)
+
+    for raw in urls:
+        u = H.unescape(raw)
+        ext = _image_ext(u) or ".png"
+        stem = os.path.splitext(os.path.basename(urllib.parse.urlsplit(u).path))[0]
+        stem = mf.sanitize(stem) if stem else f"{base}-image"
+        fname = unique_name(stem, ext, used)
+        dest = os.path.join(folder, fname)
+        if not (os.path.exists(dest) and os.path.getsize(dest) > 0):
+            try:
+                download_bytes(session, u, dest)
+                print(f"      image -> {fname}")
+            except Exception as e:
+                print(f"      ! image failed: {e}", file=sys.stderr)
+                continue
+        body_html = body_html.replace(raw, fname)
+    return body_html
 
 
 HLS_WORKERS = 8  # parallel segment connections; measured sweet spot on the CDN
@@ -877,6 +1007,8 @@ def scrape_one(html_text, session, args):
         print(f"Would scrape {len(items)} step(s) into: {root}")
         return
 
+    step_links = build_step_link_map(items)  # step URL -> local .md (rel. to course root)
+
     video_jobs = []  # (vzaarVideoId, dest) — deferred to phase 2 (no cookies needed)
     skipped = 0
 
@@ -903,6 +1035,9 @@ def scrape_one(html_text, session, args):
             continue
 
         data = extract_step(html)
+
+        if data["related_links"]:
+            data["related_links"] = resolve_related_links(session, data["related_links"])
 
         if data["video"] and not args.skip_video:
             vid = data["video"]["vzaarVideoId"]
@@ -950,6 +1085,12 @@ def scrape_one(html_text, session, args):
         if not args.skip_audio and data["body_html"]:
             data["body_html"], audio_files = localize_audio(
                 session, data["body_html"], folder, title_sane, used_names)
+
+        if data["body_html"]:
+            data["body_html"] = localize_images(
+                session, data["body_html"], folder, title_sane, used_names)
+            data["body_html"] = localize_step_links(
+                data["body_html"], step_links, os.path.join(*parts))
 
         quiz_lines = []
         if step.get("type") in ("Quiz", "Test") and not args.skip_quiz:
