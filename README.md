@@ -28,16 +28,17 @@ uv tool install .
 - A Netscape-format `cookies.txt` exported from your logged-in browser, covering **both**
   `futurelearn.com` and `ugc.futurelearn.com` (the subtitle CDN). The "Get cookies.txt
   LOCALLY" extension works.
-- A saved course page — open any step of the course in your browser and save the HTML.
-  Any step page works; each one embeds the full course tree.
+- The course URL — the course home page or any step page works; each embeds the full
+  course tree. If a URL doesn't render the tree directly, the first step link in the
+  page is followed automatically.
 
 ## Run
 
 ```bash
-futurelearn page.html --cookies cookies.txt -o ~/Courses
+futurelearn https://www.futurelearn.com/courses/japanese-rare-books-culture/7 --cookies cookies.txt -o ~/Courses
 ```
 
-(Without installing: `python -m futurelearn_downloader page.html --cookies cookies.txt -o ~/Courses`.)
+(Without installing: `python -m futurelearn_downloader https://www.futurelearn.com/courses/japanese-rare-books-culture/7 --cookies cookies.txt -o ~/Courses`.)
 
 ### Download several courses at once
 

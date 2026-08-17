@@ -17,7 +17,7 @@
 Shared helpers for futurelearn-downloader: name sanitising and course-tree parsing.
 
 The course outline (weeks -> activities -> steps) lives in an embedded JSON blob inside
-a saved course page. These functions turn that blob into a flat list of steps and safe,
+a course page. These functions turn that blob into a flat list of steps and safe,
 collision-free folder/file names.
 """
 

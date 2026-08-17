@@ -37,12 +37,12 @@ a fresh cookies.txt from your logged-in browser and re-run (the script skips wha
 downloaded, so it resumes cleanly).
 
 Run:
-    futurelearn page.html --cookies cookies.txt -o /path/out
+    futurelearn <course-url> --cookies cookies.txt -o /path/out
 
     # or download several courses from a list of URLs (one per line):
     futurelearn --links courses.txt --cookies cookies.txt -o /path/out
 
-(or, without installing: `python -m futurelearn_downloader page.html --cookies cookies.txt`)
+(or, without installing: `python -m futurelearn_downloader <course-url> --cookies cookies.txt`)
 """
 
 import argparse
@@ -1030,8 +1030,9 @@ def fetch_course_page(session, url):
 def main():
     ap = argparse.ArgumentParser(
         description="Scrape one or more FutureLearn courses to folders + markdown.")
-    ap.add_argument("html_file", nargs="?", default="page.html",
-                    help="saved course page (single-course mode)")
+    ap.add_argument("course_url", nargs="?",
+                    help="course URL to download (single-course mode); "
+                         "or pass --links FILE for several courses")
     ap.add_argument("--links", metavar="FILE",
                     help="file with one course URL per line; downloads each "
                          "(blank lines and # comments ignored)")
@@ -1051,11 +1052,17 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
+    if args.links and args.course_url:
+        ap.error("give either a course URL or --links FILE, not both")
+    if not args.links and not args.course_url:
+        ap.error("provide a course URL, or --links FILE with one course URL per line")
+
+    session = make_session(parse_cookies(args.cookies))
+
     if args.links:
         urls = read_links(args.links)
         if not urls:
             raise SystemExit(f"No course URLs found in {args.links}")
-        session = make_session(parse_cookies(args.cookies))
         for url in urls:
             print(f"\n=== {url} ===")
             try:
@@ -1069,14 +1076,11 @@ def main():
                 print(f"! {url}: {e}", file=sys.stderr)
                 continue
     else:
+        print(f"\n=== {args.course_url} ===")
         try:
-            with open(args.html_file, encoding="utf-8", errors="replace") as fh:
-                html_text = fh.read()
-        except FileNotFoundError:
-            raise SystemExit(
-                f"No such file: {args.html_file}. Pass a saved course page, or use "
-                f"--links FILE to download from a list of course URLs.")
-        session = None if args.dry_run else make_session(parse_cookies(args.cookies))
+            html_text = fetch_course_page(session, args.course_url)
+        except Exception as e:
+            raise SystemExit(f"! failed to fetch {args.course_url}: {e}")
         try:
             scrape_one(html_text, session, args)
         except ValueError as e:
