@@ -940,11 +940,29 @@ def build_step_markdown(title, data, title_sane, sub_links, download_links,
     return "\n".join(lines).rstrip() + "\n"
 
 
-def build_toc(root_name, items, locked=()):
+def course_source_url(items):
+    """First step URL — a stable, re-scrapable entry point for this course.
+
+    The course home/run URL doesn't always render the embedded course tree (some runs
+    serve an overview page whose first step link points at a different run), so the
+    first step URL from the tree itself is the reliable input for a later re-run.
+    """
+    if items:
+        href = items[0][1].get("href", "")
+        if href:
+            return mf.BASE_URL + href
+    return ""
+
+
+def build_toc(root_name, items, locked=(), source_url=""):
     """Render the ToC. Locked weeks are saved as normal headings; weeks skipped via
-    --skip-locked are listed as unlinked placeholders."""
+    --skip-locked are listed as unlinked placeholders. `source_url` is recorded as
+    YAML frontmatter so the course can be re-scraped without hunting down its URL."""
     scraped_weeks = {parts[0] for parts, _ in items}
-    lines = [f"# {root_name}", ""]
+    lines = []
+    if source_url:
+        lines += ["---", f"source: {source_url}", "---", ""]
+    lines += [f"# {root_name}", ""]
     cur_week = cur_act = None
     for parts, step in items:
         week, act, stepdir = parts
@@ -983,6 +1001,7 @@ def scrape_one(html_text, session, args):
     root = os.path.join(args.out, root_name)
     items = mf.collect_steps(weeks, include_locked=not args.skip_locked)
     locked = mf.locked_weeks(weeks)
+    source_url = course_source_url(items)
 
     if locked:
         verb = "skipping" if args.skip_locked else "scraping anyway"
@@ -1109,7 +1128,7 @@ def scrape_one(html_text, session, args):
         download_video(vid, dest)
 
     # ---- ToC ----
-    toc = build_toc(root_name, items, locked)
+    toc = build_toc(root_name, items, locked, source_url)
     with open(os.path.join(root, "ToC.md"), "w", encoding="utf-8") as fh:
         fh.write(toc)
 
