@@ -107,9 +107,9 @@ def parse_cookies(path):
 def make_session(cookies):
     # "chrome" (curl_cffi default) is a commonly-flagged scraper profile; a pinned
     # Chrome version passes and lets curl_cffi set a fingerprint+UA that match.
-    s = creq.Session(impersonate="chrome124")
-    s.cookies.update(cookies)
-    return s
+    session = creq.Session(impersonate="chrome124")
+    session.cookies.update(cookies)
+    return session
 
 
 # ---------------------------------------------------------------------------
@@ -433,19 +433,17 @@ def localize_audio(session, body_html, folder, base, used):
     `body_to_markdown()` so they become <audio> players."""
     # Match against the raw (still HTML-escaped) body so the replacement lands on both the
     # href="…" and the data-url="…" copy; unescape only what we hand to the HTTP client.
-    urls = []
-    for m in AUDIO_URL_RE.finditer(body_html):
-        if m.group(0) not in urls:
-            urls.append(m.group(0))
+    urls = list(dict.fromkeys(m.group(0) for m in AUDIO_URL_RE.finditer(body_html)))
 
     names = []
     for raw in urls:
         u = H.unescape(raw)
         ext = os.path.splitext(u.split("?")[0])[1].lower() or ".mp3"
-        fname = f"{base}-audio-{len(names) + 1}{ext}"
+        n = len(names) + 1
+        fname = f"{base}-audio-{n}{ext}"
         k = 2
         while fname in used:
-            fname = f"{base}-audio-{len(names) + 1}-{k}{ext}"
+            fname = f"{base}-audio-{n}-{k}{ext}"
             k += 1
         dest = os.path.join(folder, fname)
         if not (os.path.exists(dest) and os.path.getsize(dest) > 0):
@@ -477,15 +475,10 @@ def localize_images(session, body_html, folder, base, used):
     every `src`/`href` that referenced it is rewritten to the local file, the same way
     inline audio clips are localised.
     """
-    urls = []
-    for m in IMG_TAG_SRC_RE.finditer(body_html):
-        u = m.group(2).strip()
-        if u and u not in urls:
-            urls.append(u)
-    for m in A_TAG_HREF_RE.finditer(body_html):
-        u = m.group(2).strip()
-        if u and _image_ext(u) and u not in urls:
-            urls.append(u)
+    urls = [m.group(2).strip() for m in IMG_TAG_SRC_RE.finditer(body_html)]
+    urls += [m.group(2).strip() for m in A_TAG_HREF_RE.finditer(body_html)
+             if _image_ext(m.group(2).strip())]
+    urls = [u for u in dict.fromkeys(urls) if u]
 
     for raw in urls:
         u = H.unescape(raw)
@@ -528,12 +521,13 @@ def _thread_session():
 
 def _hls_variant_uri(master_text):
     """Highest-bandwidth non-I-FRAME variant URI from a master playlist."""
+    lines = master_text.splitlines()
     best = None
-    for i, line in enumerate(master_text.splitlines()):
+    for i, line in enumerate(lines):
         if line.startswith("#EXT-X-STREAM-INF") and "I-FRAME" not in line:
             m = re.search(r"BANDWIDTH=(\d+)", line)
             if m and (best is None or int(m.group(1)) > best[0]):
-                best = (int(m.group(1)), master_text.splitlines()[i + 1])
+                best = (int(m.group(1)), lines[i + 1])
     return best
 
 
@@ -550,43 +544,42 @@ def _download_hls_native(master_url, dest_mp4):
     """
     global _LAST_NET
     sess = creq.Session(impersonate="chrome124")
-    r = sess.get(master_url, timeout=60)
-    r.raise_for_status()
-    master_final = str(r.url)  # after redirects; child URIs resolve against this
-    best = _hls_variant_uri(r.text)
+    master_resp = sess.get(master_url, timeout=60)
+    master_resp.raise_for_status()
+    master_final = str(master_resp.url)  # after redirects; child URIs resolve against this
+    best = _hls_variant_uri(master_resp.text)
     if best is None:
         raise ValueError("no usable HLS variant in master playlist")
     child_url = urllib.parse.urljoin(master_final, best[1])
-    rc = sess.get(child_url, timeout=60)
-    rc.raise_for_status()
-    child = rc.text
+    child_resp = sess.get(child_url, timeout=60)
+    child_resp.raise_for_status()
+    child = child_resp.text
     if "#EXT-X-KEY" in child:
         raise ValueError("encrypted segments (EXT-X-KEY) — ffmpeg handles these")
     if "#EXT-X-ENDLIST" not in child:
         raise ValueError("live playlist (no ENDLIST) — ffmpeg handles these")
-    seg_urls = [urllib.parse.urljoin(str(rc.url), line)
+    seg_urls = [urllib.parse.urljoin(str(child_resp.url), line)
                 for line in child.splitlines() if line and not line.startswith("#")]
     if not seg_urls:
         raise ValueError("segment list is empty")
 
     tmp = tempfile.mkdtemp(prefix="flhls-", dir=os.path.dirname(dest_mp4))
     part = dest_mp4 + ".part"
-    total = [0]
+    downloaded = 0
     net_s = 0.0
     ok = False
     try:
         # Estimate the total size for a determinate bar from the playlist
         # itself (variant bitrate x summed durations) — cheaper than HEADing
         # every segment, and the estimate is within a few percent.
-        dur = sum(float(x) for x in re.findall(r"#EXTINF:([0-9.]+)", child))
-        total_hint = int(best[0] / 8 * dur) if dur else 0
+        duration = sum(float(x) for x in re.findall(r"#EXTINF:([0-9.]+)", child))
+        total_hint = int(best[0] / 8 * duration) if duration else 0
 
-        # Parallel segment download. `last`/`total` are only touched by the
-        # main thread (as_completed loop), so no locking is needed. `ready[i]`
-        # is signalled once segment i is fully on disk so the mux feeder can
+        # Parallel segment download. The counters are only touched by the main
+        # thread (as_completed loop), so no locking is needed. `ready[i]` is
+        # signalled once segment i is fully on disk so the mux feeder can
         # consume segments in order as they arrive.
-        def _dl(iu):
-            i, u = iu
+        def _dl(i, u):
             res = _thread_session().get(u, timeout=120, stream=True)
             res.raise_for_status()
             n = 0
@@ -643,11 +636,11 @@ def _download_hls_native(master_url, dest_mp4):
             feeder = threading.Thread(target=_feed, args=(proc.stdin,), daemon=True)
             feeder.start()
             with concurrent.futures.ThreadPoolExecutor(max_workers=HLS_WORKERS) as ex:
-                futs = [ex.submit(_dl, (i, u)) for i, u in enumerate(seg_urls)]
+                futs = [ex.submit(_dl, i, u) for i, u in enumerate(seg_urls)]
                 try:
                     for f in concurrent.futures.as_completed(futs):
                         n = f.result()  # propagates download errors
-                        total[0] += n
+                        downloaded += n
                         bar.update(n)
                 except Exception:
                     dl_failed.set()
@@ -674,8 +667,8 @@ def _download_hls_native(master_url, dest_mp4):
             got = float(dura.stdout.strip())
         except ValueError:
             got = 0.0
-        if got <= 0 or (dur and abs(got - dur) / dur > 0.05):
-            raise ValueError(f"muxed duration {got:.1f}s vs playlist {dur:.1f}s")
+        if got <= 0 or (duration and abs(got - duration) / duration > 0.05):
+            raise ValueError(f"muxed duration {got:.1f}s vs playlist {duration:.1f}s")
         os.replace(part, dest_mp4)
         ok = True
         return True
@@ -684,7 +677,7 @@ def _download_hls_native(master_url, dest_mp4):
         if os.path.exists(part):
             os.remove(part)
         if ok:
-            _LAST_NET = (total[0], net_s)
+            _LAST_NET = (downloaded, net_s)
 
 
 def _download_video_ffmpeg(vid, dest_mp4):
@@ -881,8 +874,8 @@ def build_step_markdown(title, data, title_sane, sub_links, download_links,
         # wrong as a heading, so render it as a blockquote instead. A paragraph carrying an
         # audio player, or a body that already opens with a heading (e.g. a poll's H2), is
         # left alone — unless that heading just repeats the title we already printed above.
-        if "\n\n" in body_md and "<audio" not in body_md.split("\n\n", 1)[0]:
-            lead, rest = body_md.split("\n\n", 1)
+        lead, sep, rest = body_md.partition("\n\n")
+        if sep and "<audio" not in lead:
             lead = lead.strip()
             if _is_redundant_h1(lead, title):
                 lines.append(rest.strip())
@@ -1072,8 +1065,9 @@ def scrape_one(html_text, session, args):
                 if not src:
                     continue
                 lang = (sub.get("srcLang") or sub.get("label") or "sub").lower()
-                seen[lang] = seen.get(lang, 0) + 1
-                fname = mf.subtitle_basename(title_sane, sub, seen[lang] - 1)
+                index = seen.get(lang, 0)
+                seen[lang] = index + 1
+                fname = mf.subtitle_basename(title_sane, sub, index)
                 sub_links.append(fname)
                 dest = os.path.join(folder, fname)
                 if os.path.exists(dest) and os.path.getsize(dest) > 0:
