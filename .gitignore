@@ -8,6 +8,9 @@ page.html
 out/
 courses/
 
+# ...but the synthesised test fixtures are committed on purpose
+!internal/testdata/**/*.html
+
 __pycache__/
 *.pyc
 .venv/
