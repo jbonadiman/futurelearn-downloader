@@ -28,3 +28,5 @@ build/
 
 # One-shot migration helper for output scraped before the link-encoding fix
 fix_md_links.py
+
+.worktrees/
