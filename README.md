@@ -9,21 +9,13 @@ via your own browser cookies, and never submits answers or touches course state.
 ## Install
 
 ```bash
-uv tool install git+https://github.com/jbonadiman/futurelearn-downloader.git
+go install github.com/jbonadiman/futurelearn-downloader@latest
 ```
 
-This installs the `futurelearn` command into `~/.local/bin`. To install from a local
-checkout instead:
-
-```bash
-uv tool install .
-```
+This installs the `futurelearn` command into `$(go env GOPATH)/bin` (usually `~/go/bin`).
 
 ## Requirements
 
-- Python 3.9+
-- [`uv`](https://docs.astral.sh/uv/) (for `uv tool install`) — or a venv with
-  `curl_cffi` and `markdownify`
 - `ffmpeg` on `PATH` (videos are HLS streams, muxed by ffmpeg)
 - A Netscape-format `cookies.txt` exported from your logged-in browser, covering **both**
   `futurelearn.com` and `ugc.futurelearn.com` (the subtitle CDN). The "Get cookies.txt
@@ -37,8 +29,6 @@ uv tool install .
 ```bash
 futurelearn https://www.futurelearn.com/courses/japanese-rare-books-culture/7 --cookies cookies.txt -o ~/Courses
 ```
-
-(Without installing: `python -m futurelearn_downloader https://www.futurelearn.com/courses/japanese-rare-books-culture/7 --cookies cookies.txt -o ~/Courses`.)
 
 ### Download several courses at once
 
@@ -73,23 +63,23 @@ No headless browser required.
 | `--delay SEC` | pause between step pages (default 0.3) |
 | `--force` | re-scrape steps that are already complete (default: skip them) |
 | `--dry-run` | print the plan, do nothing |
+| `--version` | print the version and exit |
 
-`make_folders.py` is an internal helper module (name sanitising + course-tree parsing), imported
-by the scraper — not meant to be run directly.
-
-## Why `curl_cffi`
+## Why TLS impersonation
 
 FutureLearn sits behind Cloudflare bot management. A browser's `cf_clearance` cookie is bound
-to that browser's TLS/JA3 fingerprint, so plain `curl`/`urllib` get 403-challenged even with a
-valid `cookies.txt`. `curl_cffi` impersonates a real Chrome fingerprint, so the same
+to that browser's TLS/JA3 fingerprint, so a plain Go `net/http` client gets 403-challenged even
+with a valid `cookies.txt`. This tool impersonates a real Chrome fingerprint, so the same
 `cookies.txt` is accepted directly — verified 200 on step pages, subtitle `.vtt` files, and
 `/links/f/…` downloads.
 
+If a request still gets a 403, the client rotates through a short, bounded sequence of Chrome
+fingerprint profiles (spaced by `--delay`) before giving up. A run that keeps hitting 403s across
+every profile means the `cf_clearance` cookie itself has expired — re-export a fresh
+`cookies.txt` and re-run.
+
 FlareSolverr is the wrong tool here: it's a headless-browser proxy (slow, frequently broken
 against current Cloudflare). Fingerprint impersonation is what actually resolves the mismatch.
-
-`cf_clearance` expires (typically ~30 min). If a run starts hitting 403s, re-export a fresh
-`cookies.txt` and re-run — already-downloaded media is skipped, so it resumes cleanly.
 
 ## Resuming
 

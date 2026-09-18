@@ -11,22 +11,16 @@ courses/
 # ...but the synthesised test fixtures are committed on purpose
 !internal/testdata/**/*.html
 
-__pycache__/
-*.pyc
-.venv/
-
 # Build / packaging artifacts
+/futurelearn
+*.test
 dist/
 build/
-*.egg-info/
 
 # Scrape run logs
 *.log
 
 # Autoresearch session files (benchmark harness, experiment log)
 .auto/
-
-# One-shot migration helper for output scraped before the link-encoding fix
-fix_md_links.py
 
 .worktrees/
