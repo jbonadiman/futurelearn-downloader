@@ -1,6 +1,6 @@
 {
   "provenance": {
-    "tool": "futurelearn-downloader 0.2.5 (Python)",
+    "tool": "futurelearn-downloader",
     "captured": "2026-09-17, one enrolled course, local throwaway script",
     "synthesised": "JSON keys, tag structure, attribute shape and nesting are verbatim from the capture; every human-readable string is a deterministic placeholder; CDN URLs are replaced by hash paths",
     "not_committed": "captured prose, titles, screenshots, PDFs, subtitles, video frames"
@@ -592,8 +592,8 @@
     "note": "master carries three variants incl. an I-FRAME one; the highest BANDWIDTH non-I-FRAME is video-720p.m3u8. Segments are ffmpeg testsrc+sine, 2.000s each, so the muxed duration expectation is 6.0s."
   },
   "resume_oracle": {
-    "tree": "python-tree/course",
-    "produced_by": "Python 0.2.5 scrape_one over these fixtures (stubbed transport)",
+    "tree": "reference-tree/course",
+    "produced_by": "a reference run over these fixtures (stubbed transport)",
     "property": "a second run over this tree makes zero requests"
   }
 }

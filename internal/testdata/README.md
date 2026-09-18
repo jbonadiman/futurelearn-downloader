@@ -27,8 +27,8 @@ sentence of course text appears in these files (see `manifest.json`).
 |---|---|
 | `pages/` | 9 synthesised pages: the tree page, a to-do page, 7 step pages |
 | `media/` | `master.m3u8` + `variant.m3u8` in the real shape (signed `context` param, fake signature), 3 `.ts` segments and the subtitle/PDF/PNG/MP3 bytes — all generated with ffmpeg or by hand |
-| `goldens/` | markdown produced by Python 0.2.5 over the synthesised pages |
-| `python-tree/` | the full reference tree in 0.2.5's layout — the resume oracle |
+| `goldens/` | known-good markdown for the synthesised pages |
+| `reference-tree/` | a full course tree already scraped, folder layout intact — the resume oracle |
 | `manifest.json` | tree shape, per-page flags, media inventory, provenance |
 
 ## Refreshing
