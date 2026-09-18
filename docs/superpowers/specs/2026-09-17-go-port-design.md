@@ -34,7 +34,10 @@ keeps `markdownify`'s *semantics* and accepts its *whitespace*.
 
 ## Global constraints
 
-- Go floor: `go 1.24` in `go.mod`. Toolchain used to build: go 1.26.5.
+- Go floor: `go 1.25.0` in `go.mod` (raised from the originally planned 1.24 during
+  Task 3 — `html-to-markdown/v2` v2.5.2 and its `x/net`/`x/text` transitives declare
+  `go 1.25.0` in their own go.mod, and Go's module graph pruning requires the
+  importing module's directive to be ≥ that). Toolchain used to build: go 1.26.5.
 - `CGO_ENABLED=0`. No cgo dependency of any kind.
 - Module path: `github.com/jbonadiman/futurelearn-downloader`.
 - Dependencies, exactly these:
