@@ -29,14 +29,9 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag_name=${tag_name}" >> "$GITHUB_OUTPUT"
 
-          if git rev-parse "${tag_name}" >/dev/null 2>&1; then
-            echo "::error::Tag ${tag_name} already exists."
-            exit 1
-          fi
-
       - name: Build the changelog since the previous tag
         run: |
-          prev_tag=$(git tag --sort=-v:refname | head -n1 || true)
+          prev_tag=$(git tag --sort=-v:refname | grep -vx "${{ steps.vars.outputs.tag_name }}" | head -n1 || true)
           if [ -z "${prev_tag}" ]; then
             echo "## Changes" > changelog.md
             git log --pretty=format:"- %s (%h)" >> changelog.md
@@ -51,12 +46,20 @@ jobs:
           name: changelog
           path: changelog.md
 
-      - name: Create and push the release tag
+      # Tags are authored on the Forgejo origin and reach GitHub through the push
+      # mirror, which prunes refs it does not have. Reuse an existing tag rather
+      # than recreating it, or the next mirror sync will delete it.
+      - name: Create the release tag if it does not already exist
         run: |
+          tag_name="${{ steps.vars.outputs.tag_name }}"
+          if git rev-parse "${tag_name}" >/dev/null 2>&1; then
+            echo "Tag ${tag_name} already exists; using it as-is."
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "${{ steps.vars.outputs.tag_name }}" -m "Release ${{ steps.vars.outputs.tag_name }}"
-          git push origin "${{ steps.vars.outputs.tag_name }}"
+          git tag -a "${tag_name}" -m "Release ${tag_name}"
+          git push origin "${tag_name}"
 
   build:
     runs-on: ubuntu-latest
