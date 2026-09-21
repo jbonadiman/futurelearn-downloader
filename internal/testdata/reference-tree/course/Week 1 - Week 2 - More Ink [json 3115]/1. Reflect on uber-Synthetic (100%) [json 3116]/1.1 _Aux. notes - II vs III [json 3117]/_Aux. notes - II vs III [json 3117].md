@@ -6,7 +6,7 @@
 
 Ⅰ. Café Synthetic — “first day” [text 2576]
 
-naïve / bold: the ‘quoted’ method… [text 2577]
+naïve / bold: the “quoted” method… [text 2577]
 
 CON [text 2578]
 

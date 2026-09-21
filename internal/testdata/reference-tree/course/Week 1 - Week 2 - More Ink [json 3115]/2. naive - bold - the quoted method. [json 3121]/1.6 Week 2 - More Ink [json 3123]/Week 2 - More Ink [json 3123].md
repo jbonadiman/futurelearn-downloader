@@ -1,6 +1,6 @@
 # Week 2 - More Ink [json 3123]
 
-## naïve / bold: the ‘quoted’ method… [text 2161]
+## naïve / bold: the “quoted” method… [text 2161]
 
 CON [text 2162]
 
@@ -8,7 +8,7 @@ Week 2 - More Ink [text 2163][Reflect on über-Synthetic (100%) [text 2164]](htt
 
 Ⅰ. Café Synthetic — “first day” [text 2168]
 
-### naïve / bold: the ‘quoted’ method… [text 2169]
+### naïve / bold: the “quoted” method… [text 2169]
 
 * CON [text 2170]
 * Week 2 - More Ink [text 2171]
@@ -20,6 +20,6 @@ Week 2 - More Ink [text 2163][Reflect on über-Synthetic (100%) [text 2164]](htt
 
 Ⅰ. Café Synthetic — “first day” [text 2176]
 
-* naïve / bold: the ‘quoted’ method… [text 2177]
+* naïve / bold: the “quoted” method… [text 2177]
 * CON [text 2178]
 * Week 2 - More Ink [text 2179]

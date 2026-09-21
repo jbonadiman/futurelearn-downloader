@@ -6,7 +6,7 @@
 
 Ⅰ. Café Synthetic — “first day” [text 1288]
 
-naïve / bold: the ‘quoted’ method… [text 1289]
+naïve / bold: the “quoted” method… [text 1289]
 
 ## CON [text 1290]
 
@@ -17,7 +17,7 @@ Week 2 - More Ink [text 1291]
 * Synthetic 1.2.3: dots . . . collapsed [text 1294]
 * trailing Synthetic test [text 1295]
 * Ⅰ. Café Synthetic — “first day” [text 1296]
-* naïve / bold: the ‘quoted’ method… [text 1297]
+* naïve / bold: the “quoted” method… [text 1297]
 * CON [text 1298]
 * Week 2 - More Ink [text 1299]
 
@@ -35,7 +35,7 @@ Reflect on über-Synthetic (100%) [text 1300]
 
 Ⅰ. Café Synthetic — “first day” [text 1328]
 
-naïve / bold: the ‘quoted’ method… [text 1329]
+naïve / bold: the “quoted” method… [text 1329]
 
 ---
 

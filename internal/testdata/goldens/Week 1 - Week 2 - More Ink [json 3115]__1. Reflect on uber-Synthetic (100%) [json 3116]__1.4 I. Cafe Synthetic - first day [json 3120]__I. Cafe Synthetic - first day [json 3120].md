@@ -6,4 +6,4 @@ trailing Synthetic test [text 135]
 
 Ⅰ. Café Synthetic — “first day” [text 136]
 
-naïve / bold: the ‘quoted’ method… [text 137]
+naïve / bold: the “quoted” method… [text 137]

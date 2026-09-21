@@ -65,7 +65,7 @@
     {
       "parts": [
         "Week 1 - Week 2 - More Ink [json 3115]",
-        "2. naive - bold - the 'quoted' method. [json 3121]",
+        "2. naive - bold - the quoted method. [json 3121]",
         "1.5 CON [json 3122]"
       ],
       "title": "CON [json 3122]",
@@ -77,7 +77,7 @@
     {
       "parts": [
         "Week 1 - Week 2 - More Ink [json 3115]",
-        "2. naive - bold - the 'quoted' method. [json 3121]",
+        "2. naive - bold - the quoted method. [json 3121]",
         "1.6 Week 2 - More Ink [json 3123]"
       ],
       "title": "Week 2 - More Ink [json 3123]",
@@ -113,7 +113,7 @@
     {
       "parts": [
         "Week 2 - Synthetic 1.2.3 - dots . . . collapsed [json 3126]",
-        "2. naive - bold - the 'quoted' method. [json 3129]",
+        "2. naive - bold - the quoted method. [json 3129]",
         "2.2 CON [json 3130]"
       ],
       "title": "CON [json 3130]",
@@ -125,7 +125,7 @@
     {
       "parts": [
         "Week 2 - Synthetic 1.2.3 - dots . . . collapsed [json 3126]",
-        "2. naive - bold - the 'quoted' method. [json 3129]",
+        "2. naive - bold - the quoted method. [json 3129]",
         "2.3 Week 2 - More Ink [json 3131]"
       ],
       "title": "Week 2 - More Ink [json 3131]",
@@ -161,7 +161,7 @@
     {
       "parts": [
         "Week 3 - Synthetic 1.2.3 - dots . . . collapsed [json 3134]",
-        "2. naive - bold - the 'quoted' method. [json 3137]",
+        "2. naive - bold - the quoted method. [json 3137]",
         "3.2 CON [json 3138]"
       ],
       "title": "CON [json 3138]",
@@ -173,7 +173,7 @@
     {
       "parts": [
         "Week 3 - Synthetic 1.2.3 - dots . . . collapsed [json 3134]",
-        "2. naive - bold - the 'quoted' method. [json 3137]",
+        "2. naive - bold - the quoted method. [json 3137]",
         "3.3 Week 2 - More Ink [json 3139]"
       ],
       "title": "Week 2 - More Ink [json 3139]",
@@ -209,7 +209,7 @@
     {
       "parts": [
         "Week 4 - Synthetic 1.2.3 - dots . . . collapsed [json 3142]",
-        "2. naive - bold - the 'quoted' method. [json 3145]",
+        "2. naive - bold - the quoted method. [json 3145]",
         "4.2 CON [json 3146]"
       ],
       "title": "CON [json 3146]",
@@ -221,7 +221,7 @@
     {
       "parts": [
         "Week 4 - Synthetic 1.2.3 - dots . . . collapsed [json 3142]",
-        "2. naive - bold - the 'quoted' method. [json 3145]",
+        "2. naive - bold - the quoted method. [json 3145]",
         "4.3 Week 2 - More Ink [json 3147]"
       ],
       "title": "Week 2 - More Ink [json 3147]",
@@ -257,7 +257,7 @@
     {
       "parts": [
         "Week 5 - Synthetic 1.2.3 - dots . . . collapsed [json 3150]",
-        "2. naive - bold - the 'quoted' method. [json 3153]",
+        "2. naive - bold - the quoted method. [json 3153]",
         "5.2 CON [json 3154]"
       ],
       "title": "CON [json 3154]",
@@ -269,7 +269,7 @@
     {
       "parts": [
         "Week 5 - Synthetic 1.2.3 - dots . . . collapsed [json 3150]",
-        "2. naive - bold - the 'quoted' method. [json 3153]",
+        "2. naive - bold - the quoted method. [json 3153]",
         "5.3 Week 2 - More Ink [json 3155]"
       ],
       "title": "Week 2 - More Ink [json 3155]",
@@ -305,7 +305,7 @@
     {
       "parts": [
         "Week 6 - Synthetic 1.2.3 - dots . . . collapsed [json 3158]",
-        "2. naive - bold - the 'quoted' method. [json 3161]",
+        "2. naive - bold - the quoted method. [json 3161]",
         "6.2 CON [json 3162]"
       ],
       "title": "CON [json 3162]",
@@ -317,7 +317,7 @@
     {
       "parts": [
         "Week 6 - Synthetic 1.2.3 - dots . . . collapsed [json 3158]",
-        "2. naive - bold - the 'quoted' method. [json 3161]",
+        "2. naive - bold - the quoted method. [json 3161]",
         "6.3 Week 2 - More Ink [json 3163]"
       ],
       "title": "Week 2 - More Ink [json 3163]",
@@ -557,12 +557,12 @@
       "tree_path": "Week 1 - Week 2 - More Ink [json 3115]/3. Reflect on uber-Synthetic (100%) [json 3124]/1.7 _Aux. notes - II vs III [json 3125]/_Aux. notes - II vs III [json 3125].md"
     },
     {
-      "file": "goldens/Week 1 - Week 2 - More Ink [json 3115]__2. naive - bold - the 'quoted' method. [json 3121]__1.6 Week 2 - More Ink [json 3123]__Week 2 - More Ink [json 3123].md",
-      "tree_path": "Week 1 - Week 2 - More Ink [json 3115]/2. naive - bold - the 'quoted' method. [json 3121]/1.6 Week 2 - More Ink [json 3123]/Week 2 - More Ink [json 3123].md"
+      "file": "goldens/Week 1 - Week 2 - More Ink [json 3115]__2. naive - bold - the quoted method. [json 3121]__1.6 Week 2 - More Ink [json 3123]__Week 2 - More Ink [json 3123].md",
+      "tree_path": "Week 1 - Week 2 - More Ink [json 3115]/2. naive - bold - the quoted method. [json 3121]/1.6 Week 2 - More Ink [json 3123]/Week 2 - More Ink [json 3123].md"
     },
     {
-      "file": "goldens/Week 1 - Week 2 - More Ink [json 3115]__2. naive - bold - the 'quoted' method. [json 3121]__1.5 CON [json 3122]__CON [json 3122].md",
-      "tree_path": "Week 1 - Week 2 - More Ink [json 3115]/2. naive - bold - the 'quoted' method. [json 3121]/1.5 CON [json 3122]/CON [json 3122].md"
+      "file": "goldens/Week 1 - Week 2 - More Ink [json 3115]__2. naive - bold - the quoted method. [json 3121]__1.5 CON [json 3122]__CON [json 3122].md",
+      "tree_path": "Week 1 - Week 2 - More Ink [json 3115]/2. naive - bold - the quoted method. [json 3121]/1.5 CON [json 3122]/CON [json 3122].md"
     },
     {
       "file": "goldens/Week 1 - Week 2 - More Ink [json 3115]__1. Reflect on uber-Synthetic (100%) [json 3116]__1.4 I. Cafe Synthetic - first day [json 3120]__I. Cafe Synthetic - first day [json 3120].md",

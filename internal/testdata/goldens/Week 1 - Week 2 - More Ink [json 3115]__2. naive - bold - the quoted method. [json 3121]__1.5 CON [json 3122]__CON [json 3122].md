@@ -4,7 +4,7 @@
 
 ## Synthetic 1.2.3: dots . . . collapsed [text 1702]
 
-trailing Synthetic test [text 1703]**Ⅰ. Café Synthetic — “first day” [text 1704]**naïve / bold: the ‘quoted’ method… [text 1705]
+trailing Synthetic test [text 1703]**Ⅰ. Café Synthetic — “first day” [text 1704]**naïve / bold: the “quoted” method… [text 1705]
 
 CON [text 1706]**Week 2 - More Ink [text 1707]**Reflect on über-Synthetic (100%) [text 1708]
 
@@ -20,7 +20,7 @@ trailing Synthetic test [text 1711]
 
 ## Ⅰ. Café Synthetic — “first day” [text 1712]
 
-naïve / bold: the ‘quoted’ method… [text 1713]
+naïve / bold: the “quoted” method… [text 1713]
 
 1. CON [text 1714]
 2. Week 2 - More Ink [text 1715]
@@ -30,7 +30,7 @@ naïve / bold: the ‘quoted’ method… [text 1713]
 
 ![Synthetic 1.2.3: dots . . . collapsed [alt 1718]](53f5b6322e753c8e.png)
 
-trailing Synthetic test [text 1719]**Ⅰ. Café Synthetic — “first day” [text 1720]**naïve / bold: the ‘quoted’ method… [text 1721]**CON [text 1722]**Week 2 - More Ink [text 1723]
+trailing Synthetic test [text 1719]**Ⅰ. Café Synthetic — “first day” [text 1720]**naïve / bold: the “quoted” method… [text 1721]**CON [text 1722]**Week 2 - More Ink [text 1723]
 
 * Reflect on über-Synthetic (100%) [text 1724]
 * Aux. notes: Ⅱ vs Ⅲ [text 1725]
@@ -40,7 +40,7 @@ trailing Synthetic test [text 1719]**Ⅰ. Café Synthetic — “first day” [
 
 Ⅰ. Café Synthetic — “first day” [text 1728]
 
-### naïve / bold: the ‘quoted’ method… [text 1729]
+### naïve / bold: the “quoted” method… [text 1729]
 
 ![CON [alt 1730]](bf2c86e4c9616d7d.png)
 
@@ -58,7 +58,7 @@ trailing Synthetic test [text 1735]
 
 ### Ⅰ. Café Synthetic — “first day” [text 1736]
 
-naïve / bold: the ‘quoted’ method… [text 1737]
+naïve / bold: the “quoted” method… [text 1737]
 
 ## Subtitles
 

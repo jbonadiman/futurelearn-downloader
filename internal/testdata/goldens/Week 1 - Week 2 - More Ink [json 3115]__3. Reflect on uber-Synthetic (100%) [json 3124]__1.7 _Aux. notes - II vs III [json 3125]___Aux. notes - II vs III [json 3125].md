@@ -4,7 +4,7 @@
 
 Ⅰ. Café Synthetic — “first day” [text 896]
 
-naïve / bold: the ‘quoted’ method… [text 897]
+naïve / bold: the “quoted” method… [text 897]
 
 * CON [text 898]
 * Week 2 - More Ink [text 899]
@@ -16,4 +16,4 @@ naïve / bold: the ‘quoted’ method… [text 897]
 
 Ⅰ. Café Synthetic — “first day” [text 904]
 
-naïve / bold: the ‘quoted’ method… [text 905]
+naïve / bold: the “quoted” method… [text 905]
