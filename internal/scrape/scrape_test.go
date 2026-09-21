@@ -344,3 +344,88 @@ func TestLocalRefsSkipsRemoteAndStepCrossReferences(t *testing.T) {
 		}
 	}
 }
+
+// textClient serves canned bodies and records what was fetched, so the fallback
+// chain can be asserted without a server.
+type textClient struct {
+	Client
+	bodies  map[string]string
+	fetched []string
+}
+
+func (c *textClient) Text(target string) (string, error) {
+	c.fetched = append(c.fetched, target)
+	body, ok := c.bodies[target]
+	if !ok {
+		return "", fmt.Errorf("unexpected request: %s", target)
+	}
+	return body, nil
+}
+
+func (c *textClient) Pace() {}
+
+const runBase = "https://www.futurelearn.com/courses/synthetic-course/1"
+
+// A run's overview page carries no tree of its own, so the run's to-do page,
+// which does list this run's steps, is followed to reach one.
+func TestFetchCoursePageFallsBackToRunToDoPage(t *testing.T) {
+	overview := `<a href="/info/courses/synthetic-course/0/steps/999999">highlight</a>` +
+		`<a href="/courses/synthetic-course/1/todo">To do</a>`
+	c := &textClient{bodies: map[string]string{
+		runBase:                    overview,
+		runBase + "/todo":          readFixture(t, "pages/course-todo.html"),
+		runBase + "/steps/1992446": readFixture(t, "pages/course-tree.html"),
+	}}
+
+	html, err := fetchCoursePage(c, runBase, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !course.HasCourseTree(html) {
+		t.Fatal("fallback returned a page without the course tree")
+	}
+	for _, u := range c.fetched {
+		if strings.Contains(u, "/info/") {
+			t.Errorf("followed a cross-run highlights link: %s", u)
+		}
+	}
+}
+
+// An overview page also carries "course highlights" links pointing at a
+// different run. Following one lands on an unrelated page with no tree, so it
+// must be left alone even when nothing better is on offer.
+func TestFetchCoursePageIgnoresCrossRunHighlightsLink(t *testing.T) {
+	overview := `<a href="/info/courses/synthetic-course/0/steps/999999">highlight</a>`
+	c := &textClient{bodies: map[string]string{runBase: overview}}
+
+	html, err := fetchCoursePage(c, runBase, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if html != overview {
+		t.Fatalf("expected the overview page back, got %d bytes", len(html))
+	}
+	for _, u := range c.fetched {
+		if strings.Contains(u, "999999") {
+			t.Errorf("followed a cross-run step link: %s", u)
+		}
+	}
+}
+
+// A page that already carries the tree costs exactly one request.
+func TestFetchCoursePageUsesTreeInPlace(t *testing.T) {
+	c := &textClient{bodies: map[string]string{
+		runBase: readFixture(t, "pages/course-tree.html"),
+	}}
+
+	html, err := fetchCoursePage(c, runBase, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !course.HasCourseTree(html) {
+		t.Fatal("returned a page without the course tree")
+	}
+	if len(c.fetched) != 1 {
+		t.Fatalf("fetched %v, want only the requested page", c.fetched)
+	}
+}

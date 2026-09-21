@@ -24,9 +24,9 @@ Prebuilt binaries for Linux, macOS and Windows are attached to each
 - A Netscape-format `cookies.txt` exported from your logged-in browser, covering **both**
   `futurelearn.com` and `ugc.futurelearn.com` (the subtitle CDN). The "Get cookies.txt
   LOCALLY" extension works.
-- The course URL — the course home page or any step page works; each embeds the full
-  course tree. If a URL doesn't render the tree directly, the first step link in the
-  page is followed automatically.
+- The course URL. A step page is the reliable input: it always carries the full course
+  tree. A run's home page often doesn't, in which case the run's to-do page is followed,
+  then a step link belonging to that same run.
 
 ## Run
 
@@ -49,8 +49,9 @@ https://www.futurelearn.com/courses/japanese-rare-books-culture/7
 https://www.futurelearn.com/courses/chinese-pronunciation-tone/5
 ```
 
-The URL can be a course home page or a step page; if it doesn't render the course tree
-directly, the first step link in the page is followed automatically.
+The URL can be a step page or a course home page. A step page always carries the course
+tree; if the home page doesn't, the run's to-do page is followed and then a step link
+belonging to that same run. Links into other runs are ignored.
 
 No headless browser required.
 

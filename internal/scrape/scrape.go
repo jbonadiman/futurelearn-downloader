@@ -320,7 +320,7 @@ type videoJob struct{ VzaarID, Dest string }
 func RunOne(treeHTML string, client Client, cfg Config, stdout io.Writer) error {
 	weeks, err := course.ExtractWeeks(treeHTML)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w Pass a step URL from the course instead — a run's overview page does not always carry the content tree", err)
 	}
 	rootName := course.Sanitize(course.RunTitle(treeHTML))
 	root := filepath.Join(cfg.Out, rootName)
@@ -456,13 +456,22 @@ func fileNonEmpty(path string) bool {
 	return err == nil && info.Size() > 0
 }
 
-var stepURLRE = regexp.MustCompile(`/courses/[A-Za-z0-9._~-]+/\d+/steps/\d+`)
+// courseRunRE captures "/courses/<slug>/<run>" — the identity of one course run.
+var courseRunRE = regexp.MustCompile(`/courses/[A-Za-z0-9._~-]+/\d+`)
 
-// fetchCoursePage fetches a course URL and returns HTML that carries the
-// course tree. The tree lives in the course-content sidebar, present on a
-// course's home and step pages. If the given URL doesn't render it (an
-// overview or marketing page), follow the first step link found in the
-// page instead.
+// scopedStepURLRE matches a step link belonging to one run. Scoping matters: an
+// overview page also carries "course highlights" cards that live under /info/
+// and point at a different run, and following one of those lands on a page with
+// no tree.
+func scopedStepURLRE(run string) *regexp.Regexp {
+	return regexp.MustCompile(regexp.QuoteMeta(run) + `/steps/\d+`)
+}
+
+// fetchCoursePage fetches a course URL and returns HTML that carries the course
+// tree. The tree lives in the course-content sidebar on enrolled pages, which
+// in practice means a step page. A run's overview page does not render it, but
+// it links to the run's to-do page, which does list this run's steps — so that
+// is the first fallback, then a step link from whichever page we hold.
 func fetchCoursePage(client Client, courseURL string, stdout io.Writer) (string, error) {
 	text, err := client.Text(courseURL)
 	if err != nil {
@@ -471,15 +480,55 @@ func fetchCoursePage(client Client, courseURL string, stdout io.Writer) (string,
 	if course.HasCourseTree(text) {
 		return text, nil
 	}
-	if loc := stepURLRE.FindString(text); loc != "" {
-		stepURL, err := resolveAgainst(courseURL, loc)
-		if err != nil {
-			return "", err
-		}
-		fmt.Fprintf(stdout, "  (no course tree here; following %s)\n", stepURL)
-		return client.Text(stepURL)
+
+	run := courseRunRE.FindString(courseURL)
+	if run == "" {
+		return text, nil // not a run URL, so there is nothing to scope a fallback to
 	}
-	return text, nil // let RunOne raise the real error
+	stepRE := scopedStepURLRE(run)
+
+	if loc := stepRE.FindString(text); loc != "" {
+		return followStep(client, courseURL, loc, stdout)
+	}
+
+	// An overview page carries no steps of its own, so try the run's to-do page.
+	todo, err := runToDoURL(courseURL, run)
+	if err != nil {
+		return text, nil
+	}
+	todoHTML, err := client.Text(todo)
+	if err != nil {
+		return text, nil // let RunOne raise the real error
+	}
+	fmt.Fprintf(stdout, "  (no course tree here; following %s)\n", todo)
+	if course.HasCourseTree(todoHTML) {
+		return todoHTML, nil
+	}
+	if loc := stepRE.FindString(todoHTML); loc != "" {
+		return followStep(client, todo, loc, stdout)
+	}
+	return todoHTML, nil
+}
+
+// followStep fetches the step named by loc, a URL reference resolved against base.
+func followStep(client Client, base, loc string, stdout io.Writer) (string, error) {
+	stepURL, err := resolveAgainst(base, loc)
+	if err != nil {
+		return "", err
+	}
+	fmt.Fprintf(stdout, "  (no course tree here; following %s)\n", stepURL)
+	return client.Text(stepURL)
+}
+
+// runToDoURL is a run's to-do page, derived from any URL inside that run.
+func runToDoURL(courseURL, run string) (string, error) {
+	u, err := url.Parse(courseURL)
+	if err != nil {
+		return "", err
+	}
+	u.Path = run + "/todo"
+	u.RawQuery, u.Fragment = "", ""
+	return u.String(), nil
 }
 
 func resolveAgainst(base, ref string) (string, error) {
