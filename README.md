@@ -12,7 +12,11 @@ via your own browser cookies, and never submits answers or touches course state.
 go install github.com/jbonadiman/futurelearn-downloader@latest
 ```
 
-This installs the `futurelearn` command into `$(go env GOPATH)/bin` (usually `~/go/bin`).
+This installs the `futurelearn-downloader` command into `$(go env GOPATH)/bin` (usually
+`~/go/bin`).
+
+Prebuilt binaries for Linux, macOS and Windows are attached to each
+[release](https://github.com/jbonadiman/futurelearn-downloader/releases).
 
 ## Requirements
 
@@ -27,7 +31,7 @@ This installs the `futurelearn` command into `$(go env GOPATH)/bin` (usually `~/
 ## Run
 
 ```bash
-futurelearn https://www.futurelearn.com/courses/japanese-rare-books-culture/7 --cookies cookies.txt -o ~/Courses
+futurelearn-downloader https://www.futurelearn.com/courses/japanese-rare-books-culture/7 --cookies cookies.txt -o ~/Courses
 ```
 
 ### Download several courses at once
@@ -36,7 +40,7 @@ Put one course URL per line in a file and pass it with `--links` — blank lines
 `#` comments are ignored, and each course is saved under its own title folder:
 
 ```bash
-futurelearn --links courses.txt --cookies cookies.txt -o ~/Courses
+futurelearn-downloader --links courses.txt --cookies cookies.txt -o ~/Courses
 ```
 
 ```

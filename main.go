@@ -1,4 +1,4 @@
-// Command futurelearn scrapes one or more FutureLearn courses to folders
+// Command futurelearn-downloader scrapes one or more FutureLearn courses to folders
 // + Markdown.
 package main
 
@@ -64,12 +64,12 @@ func run(args []string, stdout io.Writer) error {
 		return err
 	}
 
-	fs := flag.NewFlagSet("futurelearn", flag.ContinueOnError)
+	fs := flag.NewFlagSet("futurelearn-downloader", flag.ContinueOnError)
 	fs.SetOutput(stdout)
 	fs.Usage = func() {
 		fmt.Fprintln(stdout, "Scrape one or more FutureLearn courses to folders + markdown.")
-		fmt.Fprintln(stdout, "\nUsage: futurelearn [flags] course_url")
-		fmt.Fprintln(stdout, "   or: futurelearn [flags] --links FILE")
+		fmt.Fprintln(stdout, "\nUsage: futurelearn-downloader [flags] course_url")
+		fmt.Fprintln(stdout, "   or: futurelearn-downloader [flags] --links FILE")
 		fs.PrintDefaults()
 	}
 
