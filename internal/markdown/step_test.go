@@ -5,8 +5,7 @@ import (
 	"testing"
 )
 
-// Ported from tests/test_build_step_markdown.py — asserting heading counts
-// is exactly the structure-equivalent bar.
+// A step body that opens with an h1 matching the title must not repeat it.
 
 func TestBodyOpeningH1MatchingTitleIsNotDuplicated(t *testing.T) {
 	md := BuildStepMarkdown(StepInput{

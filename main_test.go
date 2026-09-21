@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"flag"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -24,12 +26,20 @@ func TestFlagValidation(t *testing.T) {
 
 func TestVersionFlag(t *testing.T) {
 	version = "v9.9.9-test"
+	t.Cleanup(func() { version = "dev" })
 	var buf bytes.Buffer
 	if err := run([]string{"--version"}, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "v9.9.9-test") {
 		t.Fatalf("output = %q", buf.String())
+	}
+}
+
+// main() turns this sentinel into exit 0 rather than a "!" error line.
+func TestHelpIsNotAnError(t *testing.T) {
+	if err := run([]string{"--help"}, io.Discard); !errors.Is(err, flag.ErrHelp) {
+		t.Fatalf("run(--help) = %v, want flag.ErrHelp", err)
 	}
 }
 

@@ -12,7 +12,7 @@ courses/
 !internal/testdata/**/*.html
 
 # Build / packaging artifacts
-/futurelearn
+/futurelearn-downloader
 *.test
 dist/
 build/

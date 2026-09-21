@@ -3,10 +3,12 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -16,8 +18,25 @@ import (
 // version is overridden at build time: -ldflags "-X main.version=$(git describe --tags --always)".
 var version = "dev"
 
+// buildVersion reports the linker-injected version, falling back to the
+// module version that go install records, so a binary built straight from
+// the module proxy does not claim to be "dev".
+func buildVersion() string {
+	if version != "dev" {
+		return version
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		return bi.Main.Version
+	}
+	return version
+}
+
 func main() {
 	if err := run(os.Args[1:], os.Stdout); err != nil {
+		// --help is a successful outcome, not a failure to report.
+		if errors.Is(err, flag.ErrHelp) {
+			os.Exit(0)
+		}
 		fmt.Fprintln(os.Stderr, "!", err)
 		os.Exit(1)
 	}
@@ -85,9 +104,9 @@ func run(args []string, stdout io.Writer) error {
 	fs.StringVar(&out, "out", ".", "output directory")
 	fs.IntVar(&cfg.Limit, "limit", 0, "process first N steps (0=all)")
 	fs.Float64Var(&delaySeconds, "delay", 0.3, "pause between step pages, in seconds")
-	fs.BoolVar(&cfg.SkipVideo, "skip-video", false, "")
-	fs.BoolVar(&cfg.SkipSubs, "skip-subs", false, "")
-	fs.BoolVar(&cfg.SkipDownloads, "skip-downloads", false, "")
+	fs.BoolVar(&cfg.SkipVideo, "skip-video", false, "don't download videos")
+	fs.BoolVar(&cfg.SkipSubs, "skip-subs", false, "don't download video subtitles")
+	fs.BoolVar(&cfg.SkipDownloads, "skip-downloads", false, "don't download files linked from a step")
 	fs.BoolVar(&cfg.SkipAudio, "skip-audio", false, "don't localise inline audio clips")
 	fs.BoolVar(&cfg.SkipQuiz, "skip-quiz", false, "don't scrape quiz/test questions")
 	fs.BoolVar(&cfg.Force, "force", false, "re-scrape steps that are already complete (default: skip them)")
@@ -99,7 +118,7 @@ func run(args []string, stdout io.Writer) error {
 	}
 
 	if showVersion {
-		fmt.Fprintln(stdout, version)
+		fmt.Fprintln(stdout, buildVersion())
 		return nil
 	}
 
