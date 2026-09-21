@@ -254,6 +254,9 @@ func (c countingClient) LocalizeAudio(string, string, string, map[string]bool) (
 func (c countingClient) LocalizeImages(string, string, string, map[string]bool) (string, error) {
 	return "", c.fail()
 }
+func (c countingClient) LocalizeFiles(string, string, string, map[string]bool) (string, []string, error) {
+	return "", nil, c.fail()
+}
 func (c countingClient) Subtitles(*course.Video, string, string) ([]string, error) {
 	return nil, c.fail()
 }

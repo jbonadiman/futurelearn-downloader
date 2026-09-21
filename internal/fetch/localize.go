@@ -213,6 +213,54 @@ func (c *Client) LocalizeImages(bodyHTML, folder, base string, used map[string]b
 	return bodyHTML, nil
 }
 
+// fileExtRE matches the extensions backed up when they appear as a plain
+// link in a step's body. Images and audio have their own localisers;
+// these are the document types courses link out to.
+var fileExtRE = regexp.MustCompile(`(?i)\.(?:pdf|docx?|xlsx?|pptx?|csv|rtf|odt|ods|odp|epub|zip)$`)
+
+// LocalizeFiles downloads every body link that points at a document and
+// rewrites it to the local filename. Courses that host their handouts
+// off-site put them in the prose rather than in relatedFiles, so without
+// this the reader has to fetch them by hand. A failed download leaves the
+// remote URL in place; a name is only taken via RelatedFile once the
+// download succeeds.
+func (c *Client) LocalizeFiles(bodyHTML, folder, base string, used map[string]bool) (string, []string, error) {
+	var raws []string
+	seen := map[string]bool{}
+	for _, u := range findQuotedAttr(bodyHTML, "a", "href") {
+		u = strings.TrimSpace(u)
+		if u == "" || seen[u] || fileExtRE.FindString(urlPathOf(u)) == "" {
+			continue
+		}
+		seen[u] = true
+		raws = append(raws, u)
+	}
+
+	var names []string
+	for _, raw := range raws {
+		u := html.UnescapeString(raw)
+		if strings.HasPrefix(u, "/") {
+			u = course.BaseURL + u
+		}
+		stem := strings.TrimSuffix(filepath.Base(urlPathOf(u)), filepath.Ext(urlPathOf(u)))
+		if stem == "" {
+			stem = base + "-file"
+		} else {
+			stem = course.Sanitize(stem)
+		}
+
+		fname, err := c.RelatedFile(u, "", stem, folder, used)
+		if err != nil {
+			fmt.Fprintf(c.log, "      ! file failed: %v\n", err)
+			continue
+		}
+		fmt.Fprintf(c.log, "      file -> %s\n", fname)
+		names = append(names, fname)
+		bodyHTML = strings.ReplaceAll(bodyHTML, raw, fname)
+	}
+	return bodyHTML, names, nil
+}
+
 func urlPathOf(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {

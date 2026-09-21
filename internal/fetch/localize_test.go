@@ -100,6 +100,60 @@ func TestExtMapCoversDocumentTypes(t *testing.T) {
 	}
 }
 
+// A course that hosts its handouts off-site links them from the prose, so
+// they never appear in relatedFiles. Non-document links must be left alone.
+func TestLocalizeFilesDownloadsBodyDocumentLinks(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/srv/Recipe-Book.pdf" {
+			fmt.Fprint(w, "pdf-bytes")
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	c := testClient(t, srv.URL)
+	dir := t.TempDir()
+
+	body := `<p><a href="` + srv.URL + `/srv/Recipe-Book.pdf">Recipe Book</a></p>` +
+		`<p><a href="` + srv.URL + `/profiles/123">Profile</a></p>`
+
+	out, names, err := c.LocalizeFiles(body, dir, "base", map[string]bool{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 1 || names[0] != "Recipe-Book.pdf" {
+		t.Fatalf("names = %v", names)
+	}
+	if !strings.Contains(out, `href="Recipe-Book.pdf"`) {
+		t.Fatalf("href not rewritten to the local file: %s", out)
+	}
+	if !strings.Contains(out, srv.URL+`/profiles/123`) {
+		t.Fatalf("a non-document link was touched: %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "Recipe-Book.pdf")); err != nil {
+		t.Fatalf("file not written: %v", err)
+	}
+}
+
+// A download that fails must leave the remote URL in place rather than
+// produce a link to a file that is not there.
+func TestLocalizeFilesKeepsRemoteLinkWhenDownloadFails(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	c := testClient(t, srv.URL)
+
+	body := `<a href="` + srv.URL + `/missing.pdf">Missing</a>`
+	out, names, err := c.LocalizeFiles(body, t.TempDir(), "base", map[string]bool{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 0 || out != body {
+		t.Fatalf("names = %v, out = %s", names, out)
+	}
+}
+
 func TestRelatedFileDerivesExtensionFromFinalURLWhenTypeUnknown(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/links/f/1" {

@@ -1,7 +1,8 @@
 # futurelearn-downloader
 
 Downloads a FutureLearn course you are enrolled in into a local folder tree: Markdown pages,
-videos, subtitles, inline audio clips, inline images, quiz questions, PDF/audio downloads, and a ToC.
+videos, subtitles, inline audio clips, inline images, quiz questions, PDF/audio downloads,
+documents linked off-site, and a ToC.
 
 Built for offline study of a course you already have access to. It authenticates as *you*,
 via your own browser cookies, and never submits answers or touches course state.
@@ -61,7 +62,8 @@ No headless browser required.
 |------|--------|
 | `--links FILE` | download every course URL in `FILE` (one per line) |
 | `--limit N` | only process the first N steps |
-| `--skip-video` / `--skip-subs` / `--skip-downloads` | skip a media type |
+| `--skip-video` / `--skip-subs` | skip a media type |
+| `--skip-downloads` | skip `relatedFiles` and body links to documents |
 | `--skip-audio` | leave inline audio clips as remote links |
 | `--skip-quiz` | don't scrape quiz/test questions |
 | `--skip-locked` | take only released weeks (default: scrape locked ones too) |
@@ -130,6 +132,10 @@ Learn Chinese - Introduction to Chinese Pronunciation and Tone/
 
 - Download extensions come from the `relatedFiles[].type` field (`pdf`, `audio`, …), falling
   back to the final URL's extension.
+- **Off-site documents** — a body link to a document (`.pdf`, `.docx`, `.xlsx`, `.zip`, …) is
+  downloaded into the step folder and re-linked locally. Courses often host handouts on the
+  author's own site instead of in `relatedFiles`, so these would otherwise stay remote and
+  have to be fetched by hand.
 - Folder/file names are sanitised for Linux + Windows: `Ⅱ→II`, `ü→u`, smart quotes/ellipsis/`?`
   stripped, `/` and `:` replaced, trailing spaces/dots removed, Windows reserved names guarded.
 - Name collisions (e.g. `u` vs `ü` both → `u`) get a `-2` suffix.

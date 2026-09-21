@@ -39,6 +39,7 @@ type Client interface {
 	RelatedFile(linkURL, ftype, titleSane, folder string, used map[string]bool) (string, error)
 	LocalizeAudio(bodyHTML, folder, base string, used map[string]bool) (string, []string, error)
 	LocalizeImages(bodyHTML, folder, base string, used map[string]bool) (string, error)
+	LocalizeFiles(bodyHTML, folder, base string, used map[string]bool) (string, []string, error)
 	Subtitles(video *course.Video, folder, base string) ([]string, error)
 	ResolveRelatedLinks(links []course.RelatedLink) []course.RelatedLink
 	Video(vzaarID, destMP4 string) error
@@ -290,6 +291,9 @@ func processStep(client Client, html string, step course.Step, folder string, li
 
 	if data.BodyHTML != "" {
 		data.BodyHTML, _ = client.LocalizeImages(data.BodyHTML, folder, titleSane, used)
+		if !cfg.SkipDownloads {
+			data.BodyHTML, _, _ = client.LocalizeFiles(data.BodyHTML, folder, titleSane, used)
+		}
 		data.BodyHTML = localizeStepLinks(data.BodyHTML, linkMap, filepath.Join(step.Parts...))
 	}
 
