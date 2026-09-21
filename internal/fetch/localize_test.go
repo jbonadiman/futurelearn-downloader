@@ -84,6 +84,22 @@ func TestRelatedFileUsesTypeForExtension(t *testing.T) {
 	}
 }
 
+// Every type FutureLearn sends must map to its real extension. A typo here
+// silently saves a file that opens as the wrong format, and the download
+// itself still succeeds, so nothing else would catch it.
+func TestExtMapCoversDocumentTypes(t *testing.T) {
+	want := map[string]string{
+		"pdf": ".pdf", "audio": ".mp3", "video": ".mp4", "image": ".png",
+		"doc": ".doc", "docx": ".docx", "xls": ".xls", "xlsx": ".xlsx",
+		"ppt": ".ppt", "pptx": ".pptx", "zip": ".zip", "txt": ".txt",
+	}
+	for typ, ext := range want {
+		if got := extMap[typ]; got != ext {
+			t.Errorf("extMap[%q] = %q, want %q", typ, got, ext)
+		}
+	}
+}
+
 func TestRelatedFileDerivesExtensionFromFinalURLWhenTypeUnknown(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/links/f/1" {
