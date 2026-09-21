@@ -61,3 +61,37 @@ func TestClientGivesUpAfterThreeProfiles(t *testing.T) {
 		t.Fatalf("want a re-export hint, got %v", err)
 	}
 }
+
+// A request that carries no browser headers is challenged by Cloudflare no
+// matter which TLS profile sends it, so the header set is as load-bearing as
+// the fingerprint. This fails if the headers stop being applied.
+func TestClientSendsBrowserHeaders(t *testing.T) {
+	var got http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+		fmt.Fprint(w, "ok")
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(Options{CookiesPath: writeCookieFile(t), Delay: 0, Log: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Text(srv.URL); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range []string{
+		"User-Agent", "Accept", "Accept-Language", "Accept-Encoding",
+		"sec-ch-ua", "sec-ch-ua-mobile", "sec-ch-ua-platform",
+		"sec-fetch-site", "sec-fetch-mode", "sec-fetch-user", "sec-fetch-dest",
+		"upgrade-insecure-requests", "priority",
+	} {
+		if got.Get(name) == "" {
+			t.Errorf("request is missing the %s header", name)
+		}
+	}
+	if ua := got.Get("User-Agent"); !strings.HasPrefix(ua, "Mozilla/5.0") {
+		t.Errorf("User-Agent = %q, want a browser user agent", ua)
+	}
+}

@@ -24,14 +24,46 @@ import (
 
 // chromeProfiles is the Cloudflare-rotation order: bounded to 3 attempts,
 // spaced by Options.Delay. Kept in one place because a library update can
-// resequence which Chrome version profile.go maps to which name.
+// resequence which Chrome version profile.go maps to which name. Version is
+// the Chrome release the profile stands for, and drives the matching headers.
 var chromeProfiles = []struct {
 	Name    string
+	Version string
 	Profile profiles.ClientProfile
 }{
-	{"Chrome_152", profiles.Chrome_152},
-	{"Chrome_144", profiles.Chrome_144},
-	{"Chrome_133", profiles.Chrome_133},
+	{"Chrome_152", "152", profiles.Chrome_152},
+	{"Chrome_144", "144", profiles.Chrome_144},
+	{"Chrome_133", "133", profiles.Chrome_133},
+}
+
+// browserHeaders is the header set a real Chrome sends on a top-level
+// navigation. Impersonating the TLS fingerprint alone is not enough: a request
+// carrying no User-Agent or sec-fetch-* headers is challenged regardless of
+// which TLS profile sends it, so these travel with every request. Cloudflare
+// fingerprints the order too, so it is declared rather than left to the
+// header map's iteration order.
+func browserHeaders(version string) fhttp.Header {
+	return fhttp.Header{
+		"sec-ch-ua":                 {`"Chromium";v="` + version + `", "Google Chrome";v="` + version + `", "Not-A.Brand";v="99"`},
+		"sec-ch-ua-mobile":          {"?0"},
+		"sec-ch-ua-platform":        {`"macOS"`},
+		"upgrade-insecure-requests": {"1"},
+		"user-agent":                {"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + version + ".0.0.0 Safari/537.36"},
+		"accept":                    {"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"},
+		"sec-fetch-site":            {"none"},
+		"sec-fetch-mode":            {"navigate"},
+		"sec-fetch-user":            {"?1"},
+		"sec-fetch-dest":            {"document"},
+		"accept-encoding":           {"gzip, deflate, br, zstd"},
+		"accept-language":           {"en-US,en;q=0.9"},
+		"priority":                  {"u=0, i"},
+		fhttp.HeaderOrderKey: {
+			"sec-ch-ua", "sec-ch-ua-mobile", "sec-ch-ua-platform", "upgrade-insecure-requests",
+			"user-agent", "accept", "sec-fetch-site", "sec-fetch-mode", "sec-fetch-user",
+			"sec-fetch-dest", "accept-encoding", "accept-language", "priority",
+		},
+		fhttp.PHeaderOrderKey: {":method", ":authority", ":scheme", ":path"},
+	}
 }
 
 // Options configures a Client.
@@ -126,6 +158,7 @@ func (c *Client) do(method, target string) (*fhttp.Response, error) {
 		}
 		client, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(),
 			tls_client.WithClientProfile(cp.Profile),
+			tls_client.WithDefaultHeaders(browserHeaders(cp.Version)),
 			tls_client.WithCookieJar(c.jar),
 			tls_client.WithTimeoutSeconds(60),
 			tls_client.WithRandomTLSExtensionOrder(),
