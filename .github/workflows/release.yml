@@ -1,0 +1,128 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, no leading v (e.g. 0.3.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.vars.outputs.version }}
+      tag_name: ${{ steps.vars.outputs.tag_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute the tag name
+        id: vars
+        run: |
+          version="${{ inputs.version }}"
+          tag_name="v${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag_name=${tag_name}" >> "$GITHUB_OUTPUT"
+
+          if git rev-parse "${tag_name}" >/dev/null 2>&1; then
+            echo "::error::Tag ${tag_name} already exists."
+            exit 1
+          fi
+
+      - name: Build the changelog since the previous tag
+        run: |
+          prev_tag=$(git tag --sort=-v:refname | head -n1 || true)
+          if [ -z "${prev_tag}" ]; then
+            echo "## Changes" > changelog.md
+            git log --pretty=format:"- %s (%h)" >> changelog.md
+          else
+            echo "## Changes since ${prev_tag}" > changelog.md
+            git log "${prev_tag}"..HEAD --pretty=format:"- %s (%h)" >> changelog.md
+          fi
+          echo >> changelog.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: changelog
+          path: changelog.md
+
+      - name: Create and push the release tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.vars.outputs.tag_name }}" -m "Release ${{ steps.vars.outputs.tag_name }}"
+          git push origin "${{ steps.vars.outputs.tag_name }}"
+
+  build:
+    runs-on: ubuntu-latest
+    needs: tag
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag_name }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build the binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          version="${{ needs.tag.outputs.version }}"
+          out="futurelearn-downloader-v${version}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          mkdir -p "${out}" dist
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            go build -ldflags "-X main.version=${version}" -o "${out}/futurelearn-downloader.exe" .
+            (cd "${out}" && zip "../dist/${out}.zip" futurelearn-downloader.exe)
+          else
+            go build -ldflags "-X main.version=${version}" -o "${out}/futurelearn-downloader" .
+            tar -czf "dist/${out}.tar.gz" -C "${out}" futurelearn-downloader
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-binaries-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [tag, build]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: changelog
+          path: .
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-binaries-*
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.tag.outputs.tag_name }}
+          name: ${{ needs.tag.outputs.tag_name }}
+          body_path: changelog.md
+          files: dist/*
