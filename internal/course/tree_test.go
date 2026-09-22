@@ -2,6 +2,7 @@ package course
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -33,6 +34,21 @@ func TestExtractWeeksFromRealShape(t *testing.T) {
 	}
 	if steps[0].Href == "" || steps[0].Title == "" || steps[0].Parts[0] == "" {
 		t.Fatalf("step not populated: %+v", steps[0])
+	}
+}
+
+func TestCollectStepsSanitisesStepNumber(t *testing.T) {
+	// A step page's JSON is remote input; a crafted stepNumber must not turn
+	// into a path that escapes the course root when the step's folder is built.
+	weeks := []Week{{Number: 1, Title: "W", Activities: []Activity{{Title: "A", Steps: []Step{
+		{StepNumber: "../../../../tmp/pwn", Title: "T", Href: "/courses/x/1/steps/1"},
+	}}}}}
+	root := t.TempDir()
+	for _, s := range CollectSteps(weeks, true) {
+		dir := filepath.Join(append([]string{root}, s.Parts...)...)
+		if rel, err := filepath.Rel(root, dir); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			t.Fatalf("step parts escape the course root: %q", s.Parts)
+		}
 	}
 }
 

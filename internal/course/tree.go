@@ -166,7 +166,7 @@ func CollectSteps(weeks []Week, includeLocked bool) []Step {
 			}
 			for _, step := range act.Steps {
 				stepName := Sanitize(step.Title)
-				if snum := strings.TrimSpace(step.StepNumber); snum != "" {
+				if snum := Sanitize(step.StepNumber); snum != "" {
 					stepName = strings.TrimSpace(snum + " " + stepName)
 				}
 				step.Parts = []string{weekName, actName, stepName}
