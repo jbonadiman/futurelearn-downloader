@@ -3,11 +3,13 @@ package fetch
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -85,6 +87,36 @@ func TestNon200IsOneErrorForEveryFetch(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "status 404") {
 			t.Errorf("%s: err = %v, want a %q error", name, err, "status 404")
 		}
+	}
+}
+
+// Sequential fetches must share a pooled connection, or every request pays
+// a fresh TCP/TLS handshake.
+func TestClientReusesConnections(t *testing.T) {
+	var conns int64
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "ok")
+	}))
+	srv.Config.ConnState = func(_ net.Conn, s http.ConnState) {
+		if s == http.StateNew {
+			atomic.AddInt64(&conns, 1)
+		}
+	}
+	srv.Start()
+	defer srv.Close()
+
+	c, err := NewClient(Options{CookiesPath: writeCookieFile(t), Delay: 0, Log: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const n = 30
+	for i := 0; i < n; i++ {
+		if _, err := c.Text(srv.URL); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := atomic.LoadInt64(&conns); got >= n {
+		t.Fatalf("opened %d connections for %d requests; connections are not being reused", got, n)
 	}
 }
 

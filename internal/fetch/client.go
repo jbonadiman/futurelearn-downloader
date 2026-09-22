@@ -14,6 +14,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	fhttp "github.com/bogdanfinn/fhttp"
@@ -78,6 +79,11 @@ type Client struct {
 	jar   *fhttpcookiejar.Jar
 	delay time.Duration
 	log   io.Writer
+
+	// mu guards clients, and clients holds one reusable tls-client per
+	// chromeProfiles entry, built on first use.
+	mu      sync.Mutex
+	clients []tls_client.HttpClient
 }
 
 // NewClient loads cookies.txt into a fresh jar and returns a Client ready to
@@ -92,7 +98,12 @@ func NewClient(opts Options) (*Client, error) {
 	if log == nil {
 		log = os.Stderr
 	}
-	return &Client{jar: jar, delay: opts.Delay, log: log}, nil
+	return &Client{
+		jar:     jar,
+		delay:   opts.Delay,
+		log:     log,
+		clients: make([]tls_client.HttpClient, len(chromeProfiles)),
+	}, nil
 }
 
 // loadNetscapeCookies parses a Netscape-format cookies.txt into an fhttp
@@ -146,6 +157,31 @@ func (c *Client) Pace() {
 	}
 }
 
+// httpClient returns the client for chromeProfiles[i], building it on
+// first use. One client per profile lives for the whole run, so its
+// connection pool is reused and consecutive fetches to the same host
+// skip the TCP/TLS handshake.
+func (c *Client) httpClient(i int) (tls_client.HttpClient, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.clients[i] != nil {
+		return c.clients[i], nil
+	}
+	cp := chromeProfiles[i]
+	client, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(),
+		tls_client.WithClientProfile(cp.Profile),
+		tls_client.WithDefaultHeaders(browserHeaders(cp.Version)),
+		tls_client.WithCookieJar(c.jar),
+		tls_client.WithTimeoutSeconds(60),
+		tls_client.WithRandomTLSExtensionOrder(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	c.clients[i] = client
+	return client, nil
+}
+
 // do sends one request, rotating through chromeProfiles on a 403 (the
 // Cloudflare challenge response) until one succeeds or the list is
 // exhausted. Each attempt after the first is paced by Options.Delay.
@@ -156,13 +192,7 @@ func (c *Client) do(method, target string) (*fhttp.Response, error) {
 			c.Pace()
 			fmt.Fprintf(c.log, "  (403 from %s; retrying as %s)\n", chromeProfiles[i-1].Name, cp.Name)
 		}
-		client, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(),
-			tls_client.WithClientProfile(cp.Profile),
-			tls_client.WithDefaultHeaders(browserHeaders(cp.Version)),
-			tls_client.WithCookieJar(c.jar),
-			tls_client.WithTimeoutSeconds(60),
-			tls_client.WithRandomTLSExtensionOrder(),
-		)
+		client, err := c.httpClient(i)
 		if err != nil {
 			return nil, err
 		}
