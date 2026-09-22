@@ -39,16 +39,22 @@ func TestExtractWeeksFromRealShape(t *testing.T) {
 
 func TestCollectStepsSanitisesStepNumber(t *testing.T) {
 	// A step page's JSON is remote input; a crafted stepNumber must not turn
-	// into a path that escapes the course root when the step's folder is built.
+	// into a path that escapes the course root when the step's folder is built,
+	// and a missing one must not become an "untitled" prefix.
 	weeks := []Week{{Number: 1, Title: "W", Activities: []Activity{{Title: "A", Steps: []Step{
 		{StepNumber: "../../../../tmp/pwn", Title: "T", Href: "/courses/x/1/steps/1"},
+		{Title: "No number", Href: "/courses/x/1/steps/2"},
 	}}}}}
 	root := t.TempDir()
-	for _, s := range CollectSteps(weeks, true) {
+	steps := CollectSteps(weeks, true)
+	for _, s := range steps {
 		dir := filepath.Join(append([]string{root}, s.Parts...)...)
 		if rel, err := filepath.Rel(root, dir); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			t.Fatalf("step parts escape the course root: %q", s.Parts)
 		}
+	}
+	if got := steps[1].Parts[len(steps[1].Parts)-1]; got != "No number" {
+		t.Fatalf("empty stepNumber changed the folder name: %q", got)
 	}
 }
 
