@@ -1,4 +1,10 @@
-package fetch
+// Package hls downloads HLS video streams to local MP4 files.
+//
+// It is deliberately independent of package fetch: vzaar's media URLs carry
+// their own signed context/token and need no FutureLearn cookies or Cloudflare
+// clearance, so this uses its own fixed Chrome profile and shares no state with
+// the page-fetching client.
+package hls
 
 import (
 	"bytes"
@@ -412,13 +418,12 @@ func downloadVideoFFmpeg(masterURL, destMP4 string) error {
 	return os.Rename(part, destMP4)
 }
 
-// Video muxes vzaarID's HLS stream to destMP4, atomically. Tries the
+// Download muxes an HLS master playlist to destMP4, atomically. It tries the
 // parallel native path first, falling back to ffmpeg's own demuxer for
-// playlists it can't handle.
-func (c *Client) Video(vzaarID, destMP4 string) error {
-	masterURL := fmt.Sprintf("https://view.vzaar.com/%s/adaptive.m3u8", vzaarID)
+// playlists it can't handle; a fallback is reported to log.
+func Download(masterURL, destMP4 string, log io.Writer) error {
 	if err := downloadHLSNative(masterURL, destMP4); err != nil {
-		fmt.Fprintf(c.log, "      ! native HLS download failed (%v); using ffmpeg instead\n", err)
+		fmt.Fprintf(log, "      ! native HLS download failed (%v); using ffmpeg instead\n", err)
 		return downloadVideoFFmpeg(masterURL, destMP4)
 	}
 	return nil
