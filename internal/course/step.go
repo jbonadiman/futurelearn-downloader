@@ -44,7 +44,12 @@ type Subtitle struct {
 	Src     string `json:"src"`
 }
 
-var transcriptStripTagsRE = regexp.MustCompile(`<[^>]+>`)
+var stripTagsRE = regexp.MustCompile(`<[^>]+>`)
+
+// StripTags unescapes HTML entities, drops tags and trims the result.
+func StripTags(s string) string {
+	return strings.TrimSpace(stripTagsRE.ReplaceAllString(html.UnescapeString(s), ""))
+}
 
 // TranscriptText strips tags from each transcript paragraph and joins them
 // with a blank line, the shape both markdown.BuildStepMarkdown's
@@ -55,8 +60,7 @@ func TranscriptText(video *Video) string {
 	}
 	var out []string
 	for _, raw := range video.TranscriptHTML {
-		t := strings.TrimSpace(transcriptStripTagsRE.ReplaceAllString(html.UnescapeString(raw), ""))
-		if t != "" {
+		if t := StripTags(raw); t != "" {
 			out = append(out, t)
 		}
 	}

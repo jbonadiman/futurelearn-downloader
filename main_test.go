@@ -71,7 +71,12 @@ func TestReadLinksDropsDuplicatesPreservingOrder(t *testing.T) {
 }
 
 func TestFlagCourseURLAfterFlags(t *testing.T) {
-	rest, positional, err := splitPositional([]string{"--cookies", "c.txt", "https://x", "--dry-run"})
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	var cookies string
+	var dryRun bool
+	fs.StringVar(&cookies, "cookies", "", "")
+	fs.BoolVar(&dryRun, "dry-run", false, "")
+	rest, positional, err := splitPositional(fs, []string{"--cookies", "c.txt", "https://x", "--dry-run"})
 	if err != nil {
 		t.Fatal(err)
 	}

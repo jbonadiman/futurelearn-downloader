@@ -2,7 +2,6 @@ package markdown
 
 import (
 	"fmt"
-	"html"
 	"regexp"
 	"strings"
 	"unicode"
@@ -36,7 +35,6 @@ var (
 	sentenceBoundaryRE = regexp.MustCompile(`[.!?]\s+[A-Z0-9"“]`)
 	titleQuoteRE       = regexp.MustCompile(`["'“”‘’《》「」『』]`)
 	titleTrailingRE    = regexp.MustCompile(`[\s?.!:]+$`)
-	stripTagsRE        = regexp.MustCompile(`<[^>]+>`)
 )
 
 // leadIsShort reports whether the lead reads as a subtitle (one short
@@ -158,7 +156,7 @@ func BuildStepMarkdown(in StepInput) string {
 	}
 
 	if in.Copyright != "" {
-		copyTxt := strings.TrimSpace(stripTagsRE.ReplaceAllString(html.UnescapeString(in.Copyright), ""))
+		copyTxt := course.StripTags(in.Copyright)
 		if copyTxt != "" {
 			lines = append(lines, "---", "", copyTxt, "")
 		}

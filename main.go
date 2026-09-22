@@ -42,18 +42,25 @@ func main() {
 	}
 }
 
-// valueFlags are the flags stdlib flag needs a following token for, so
-// splitPositional can tell a flag's value apart from the course URL.
-var valueFlags = map[string]bool{
-	"cookies": true, "links": true, "o": true, "out": true,
-	"limit": true, "delay": true,
+// valueFlagNames reports which of fs's flags stdlib flag needs a following
+// token for. Reading the registered set keeps this in step with the
+// fs.*Var calls instead of a hand-kept list that can drift.
+func valueFlagNames(fs *flag.FlagSet) map[string]bool {
+	names := map[string]bool{}
+	fs.VisitAll(func(f *flag.Flag) {
+		if bf, ok := f.Value.(interface{ IsBoolFlag() bool }); !ok || !bf.IsBoolFlag() {
+			names[f.Name] = true
+		}
+	})
+	return names
 }
 
 // splitPositional pulls the optional course-URL positional out of args so
 // it can appear anywhere relative to flags — stdlib flag.Parse stops at
 // the first non-flag token and treats everything after it as positional,
 // which would otherwise silently ignore any flag placed after the URL.
-func splitPositional(args []string) (rest []string, positional string, err error) {
+func splitPositional(fs *flag.FlagSet, args []string) (rest []string, positional string, err error) {
+	valueFlags := valueFlagNames(fs)
 	var found []string
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -78,11 +85,6 @@ func splitPositional(args []string) (rest []string, positional string, err error
 }
 
 func run(args []string, stdout io.Writer) error {
-	rest, courseURL, err := splitPositional(args)
-	if err != nil {
-		return err
-	}
-
 	fs := flag.NewFlagSet("futurelearn-downloader", flag.ContinueOnError)
 	fs.SetOutput(stdout)
 	fs.Usage = func() {
@@ -113,6 +115,10 @@ func run(args []string, stdout io.Writer) error {
 	fs.BoolVar(&cfg.SkipLocked, "skip-locked", false, "take only released weeks (default: scrape locked ones too)")
 	fs.BoolVar(&cfg.DryRun, "dry-run", false, "print the plan, do nothing")
 
+	rest, courseURL, err := splitPositional(fs, args)
+	if err != nil {
+		return err
+	}
 	if err := fs.Parse(rest); err != nil {
 		return err
 	}
