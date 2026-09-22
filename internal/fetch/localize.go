@@ -78,13 +78,9 @@ func (c *Client) RelatedFile(linkURL, ftype, titleSane, folder string, used map[
 	}
 
 	if resp == nil {
-		resp, err = c.do(fhttp.MethodGet, linkURL)
+		resp, err = c.get(linkURL)
 		if err != nil {
 			return "", err
-		}
-		if resp.StatusCode != fhttp.StatusOK {
-			resp.Body.Close()
-			return "", fmt.Errorf("%s: status %d", linkURL, resp.StatusCode)
 		}
 	}
 	defer resp.Body.Close()
@@ -102,13 +98,9 @@ func (c *Client) relatedFileExtension(linkURL, ftype string) (ext string, resp *
 	if e, ok := extMap[ftype]; ok {
 		return e, nil, nil
 	}
-	resp, err = c.do(fhttp.MethodGet, linkURL)
+	resp, err = c.get(linkURL)
 	if err != nil {
 		return "", nil, err
-	}
-	if resp.StatusCode != fhttp.StatusOK {
-		resp.Body.Close()
-		return "", nil, fmt.Errorf("%s: status %d", linkURL, resp.StatusCode)
 	}
 	final := linkURL
 	if resp.Request != nil && resp.Request.URL != nil {
@@ -192,7 +184,7 @@ func (c *Client) LocalizeImages(bodyHTML, folder, base string, used map[string]b
 		if ext == "" {
 			ext = ".png"
 		}
-		stem := strings.TrimSuffix(filepath.Base(urlPathOf(u)), filepath.Ext(urlPathOf(u)))
+		stem := urlStem(u)
 		if stem != "" {
 			stem = course.Sanitize(stem)
 		} else {
@@ -242,7 +234,7 @@ func (c *Client) LocalizeFiles(bodyHTML, folder, base string, used map[string]bo
 		if strings.HasPrefix(u, "/") {
 			u = course.BaseURL + u
 		}
-		stem := strings.TrimSuffix(filepath.Base(urlPathOf(u)), filepath.Ext(urlPathOf(u)))
+		stem := urlStem(u)
 		if stem == "" {
 			stem = base + "-file"
 		} else {
@@ -267,6 +259,13 @@ func urlPathOf(rawURL string) string {
 		return rawURL
 	}
 	return u.Path
+}
+
+// urlStem returns the filename stem of rawURL's path — no directory, no
+// extension — or "" when the URL carries no filename to name a file after.
+func urlStem(rawURL string) string {
+	path := urlPathOf(rawURL)
+	return strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 }
 
 // Subtitles fetches every video.subtitles entry, writing trimmed VTT text

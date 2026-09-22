@@ -62,6 +62,32 @@ func TestClientGivesUpAfterThreeProfiles(t *testing.T) {
 	}
 }
 
+// A non-200 must fail the same way through every body-fetching method:
+// one rule, one message, owned by Client.get. Without this the rule can
+// drift apart between Text, Bytes and ToFile again.
+func TestNon200IsOneErrorForEveryFetch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(Options{CookiesPath: writeCookieFile(t), Delay: 0, Log: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := map[string]func() error{
+		"Text":   func() error { _, err := c.Text(srv.URL); return err },
+		"Bytes":  func() error { _, err := c.Bytes(srv.URL); return err },
+		"ToFile": func() error { _, err := c.ToFile(srv.URL, filepath.Join(t.TempDir(), "f")); return err },
+	}
+	for name, call := range calls {
+		err := call()
+		if err == nil || !strings.Contains(err.Error(), "status 404") {
+			t.Errorf("%s: err = %v, want a %q error", name, err, "status 404")
+		}
+	}
+}
+
 // A request that carries no browser headers is challenged by Cloudflare no
 // matter which TLS profile sends it, so the header set is as load-bearing as
 // the fingerprint. This fails if the headers stop being applied.

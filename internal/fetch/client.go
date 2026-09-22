@@ -186,9 +186,24 @@ func (c *Client) do(method, target string) (*fhttp.Response, error) {
 	return nil, fmt.Errorf("%s: Cloudflare kept rejecting every client profile (%v) — re-export cookies.txt from your browser and try again", target, lastErr)
 }
 
+// get sends one GET and returns the response once its status is 200,
+// leaving the body open for the caller to close. Any other status is an
+// error naming the target — the one place that rule lives.
+func (c *Client) get(target string) (*fhttp.Response, error) {
+	resp, err := c.do(fhttp.MethodGet, target)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != fhttp.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("%s: status %d", target, resp.StatusCode)
+	}
+	return resp, nil
+}
+
 // Text fetches target and returns its body as a string.
 func (c *Client) Text(target string) (string, error) {
-	resp, err := c.do(fhttp.MethodGet, target)
+	resp, err := c.get(target)
 	if err != nil {
 		return "", err
 	}
@@ -196,41 +211,27 @@ func (c *Client) Text(target string) (string, error) {
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
-	}
-	if resp.StatusCode != fhttp.StatusOK {
-		return "", fmt.Errorf("%s: status %d", target, resp.StatusCode)
 	}
 	return string(b), nil
 }
 
 // Bytes fetches the target and returns its full body.
 func (c *Client) Bytes(target string) ([]byte, error) {
-	resp, err := c.do(fhttp.MethodGet, target)
+	text, err := c.Text(target)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	b, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != fhttp.StatusOK {
-		return nil, fmt.Errorf("%s: status %d", target, resp.StatusCode)
-	}
-	return b, nil
+	return []byte(text), nil
 }
 
 // ToFile streams target's response body straight to dest, returning the
 // number of bytes written.
 func (c *Client) ToFile(target, dest string) (int64, error) {
-	resp, err := c.do(fhttp.MethodGet, target)
+	resp, err := c.get(target)
 	if err != nil {
 		return 0, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != fhttp.StatusOK {
-		return 0, fmt.Errorf("%s: status %d", target, resp.StatusCode)
-	}
 	return writeResponseBody(resp, dest)
 }
 
