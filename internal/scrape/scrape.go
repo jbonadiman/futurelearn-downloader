@@ -77,22 +77,21 @@ var (
 // assets this step produced, so they must not gate resume.
 func localRefs(mdText string) []string {
 	var out []string
-	for _, matches := range [][][]string{mdLinkRE.FindAllStringSubmatch(mdText, -1), mdSrcRE.FindAllStringSubmatch(mdText, -1)} {
-		for _, m := range matches {
-			dest := m[1]
-			if remoteDestRE.MatchString(dest) {
-				continue
-			}
-			unq, err := url.PathUnescape(dest)
-			if err != nil {
-				unq = dest
-			}
-			lower := strings.ToLower(unq)
-			if strings.HasSuffix(lower, ".md") || strings.HasSuffix(lower, ".markdown") {
-				continue
-			}
-			out = append(out, unq)
+	matches := append(mdLinkRE.FindAllStringSubmatch(mdText, -1), mdSrcRE.FindAllStringSubmatch(mdText, -1)...)
+	for _, match := range matches {
+		dest := match[1]
+		if remoteDestRE.MatchString(dest) {
+			continue
 		}
+		unq, err := url.PathUnescape(dest)
+		if err != nil {
+			unq = dest
+		}
+		lower := strings.ToLower(unq)
+		if strings.HasSuffix(lower, ".md") || strings.HasSuffix(lower, ".markdown") {
+			continue
+		}
+		out = append(out, unq)
 	}
 	return out
 }
@@ -125,18 +124,18 @@ func StepComplete(mdPath string) bool {
 // local Markdown path, so glossary/"see step N.M" links in body HTML can
 // be rewritten to point at the local file instead of the live course URL.
 func buildStepLinkMap(items []course.Step) map[string]string {
-	m := make(map[string]string, len(items)*2)
+	linkMap := make(map[string]string, len(items)*2)
 	for _, s := range items {
 		if s.Href == "" {
 			continue
 		}
-		rel := filepath.Join(append(append([]string{}, s.Parts...), course.Sanitize(s.Title)+".md")...)
-		m[s.Href] = rel
+		rel := filepath.Join(filepath.Join(s.Parts...), course.Sanitize(s.Title)+".md")
+		linkMap[s.Href] = rel
 		if strings.HasPrefix(s.Href, "/") {
-			m[course.BaseURL+s.Href] = rel
+			linkMap[course.BaseURL+s.Href] = rel
 		}
 	}
-	return m
+	return linkMap
 }
 
 var hrefAttrRE = regexp.MustCompile(`(?i)href\s*=\s*(["'])`)
@@ -151,7 +150,7 @@ func localizeStepLinks(htmlText string, linkMap map[string]string, fromDir strin
 	if locs == nil {
 		return htmlText
 	}
-	var b strings.Builder
+	var out strings.Builder
 	last := 0
 	for _, loc := range locs {
 		quote := htmlText[loc[2]:loc[3]]
@@ -177,12 +176,12 @@ func localizeStepLinks(htmlText string, linkMap map[string]string, fromDir strin
 			}
 		}
 
-		b.WriteString(htmlText[last:loc[0]])
-		b.WriteString(repl)
+		out.WriteString(htmlText[last:loc[0]])
+		out.WriteString(repl)
 		last = valEnd + len(quote)
 	}
-	b.WriteString(htmlText[last:])
-	return b.String()
+	out.WriteString(htmlText[last:])
+	return out.String()
 }
 
 // scrapeQuiz fetches a Quiz/Test step's questions and renders them as
@@ -267,12 +266,12 @@ func processStep(client Client, html string, step course.Step, folder string, li
 
 	var downloadLinks []markdown.DownloadLink
 	if len(data.RelatedFiles) > 0 && !cfg.SkipDownloads {
-		for _, f := range data.RelatedFiles {
-			label := f.Title
+		for _, file := range data.RelatedFiles {
+			label := file.Title
 			if label == "" {
 				label = "download"
 			}
-			fname, err := client.RelatedFile(course.BaseURL+f.URL, f.Type, course.Sanitize(label), folder, used)
+			fname, err := client.RelatedFile(course.BaseURL+file.URL, file.Type, course.Sanitize(label), folder, used)
 			if err != nil {
 				fmt.Fprintf(stdout, "      ! download failed: %v\n", err)
 				continue
@@ -338,10 +337,10 @@ func RunOne(treeHTML string, client Client, cfg Config, stdout io.Writer) error 
 			verb = "skipping"
 		}
 		fmt.Fprintf(stdout, "WARNING: %d week(s) not yet released to you — %s:\n", len(locked), verb)
-		for _, lw := range locked {
-			line := fmt.Sprintf("  - Week %d: %s", lw.Number, lw.FolderName)
-			if lw.UnlocksAt != "" {
-				line += fmt.Sprintf("  (unlocks %s)", lw.UnlocksAt)
+		for _, week := range locked {
+			line := fmt.Sprintf("  - Week %d: %s", week.Number, week.FolderName)
+			if week.UnlocksAt != "" {
+				line += fmt.Sprintf("  (unlocks %s)", week.UnlocksAt)
 			}
 			fmt.Fprintln(stdout, line)
 		}
@@ -357,8 +356,8 @@ func RunOne(treeHTML string, client Client, cfg Config, stdout io.Writer) error 
 
 	// Folders for every collected step are created up front, before --limit
 	// truncates the work list.
-	for _, s := range items {
-		if err := os.MkdirAll(filepath.Join(append([]string{root}, s.Parts...)...), 0o755); err != nil {
+	for _, step := range items {
+		if err := os.MkdirAll(filepath.Join(root, filepath.Join(step.Parts...)), 0o755); err != nil {
 			return err
 		}
 	}
@@ -378,7 +377,7 @@ func RunOne(treeHTML string, client Client, cfg Config, stdout io.Writer) error 
 
 	// ---- Phase 1: pages + subtitles + downloads (needs cookies) ----
 	for i, step := range items {
-		folder := filepath.Join(append([]string{root}, step.Parts...)...)
+		folder := filepath.Join(root, filepath.Join(step.Parts...))
 		titleSane := course.Sanitize(step.Title)
 		mdPath := filepath.Join(folder, titleSane+".md")
 		// Every asset written into this step's folder, so downloads/audio
@@ -418,9 +417,9 @@ func RunOne(treeHTML string, client Client, cfg Config, stdout io.Writer) error 
 	}
 
 	// ---- Phase 2: videos via ffmpeg (no cookies needed) ----
-	for j, vj := range videoJobs {
-		fmt.Fprintf(stdout, "  [video %d/%d] %s\n", j+1, len(videoJobs), filepath.Base(vj.Dest))
-		client.Video(vj.VzaarID, vj.Dest)
+	for j, job := range videoJobs {
+		fmt.Fprintf(stdout, "  [video %d/%d] %s\n", j+1, len(videoJobs), filepath.Base(job.Dest))
+		client.Video(job.VzaarID, job.Dest)
 	}
 
 	// ---- ToC ----
@@ -437,11 +436,11 @@ func RunOne(treeHTML string, client Client, cfg Config, stdout io.Writer) error 
 
 	if len(locked) > 0 {
 		parts := make([]string, len(locked))
-		for i, lw := range locked {
-			if lw.UnlocksAt != "" {
-				parts[i] = fmt.Sprintf("Week %d on %s", lw.Number, lw.UnlocksAt)
+		for i, week := range locked {
+			if week.UnlocksAt != "" {
+				parts[i] = fmt.Sprintf("Week %d on %s", week.Number, week.UnlocksAt)
 			} else {
-				parts[i] = fmt.Sprintf("Week %d", lw.Number)
+				parts[i] = fmt.Sprintf("Week %d", week.Number)
 			}
 		}
 		nxt := strings.Join(parts, ", ")
