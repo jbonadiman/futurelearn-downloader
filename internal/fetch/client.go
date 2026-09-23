@@ -144,6 +144,7 @@ func loadNetscapeCookies(path string) (*fhttpcookiejar.Jar, error) {
 			Value:   p[6],
 			Path:    p[2],
 			Domain:  p[0],
+			Secure:  strings.EqualFold(strings.TrimSpace(p[3]), "TRUE"),
 			Expires: expires,
 		}})
 	}
