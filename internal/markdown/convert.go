@@ -58,16 +58,15 @@ func BodyToMarkdown(bodyHTML string, audioFiles []string) string {
 	md = strings.TrimSpace(md)
 
 	// Turn the (now local) audio links into real players, mirroring how videos
-	// are embedded.
-	linkRECache := make(map[string]*regexp.Regexp)
-	for _, fname := range audioFiles {
-		pattern := `\[[^\]]*\]\(` + regexp.QuoteMeta(fname) + `\)`
-		if _, ok := linkRECache[pattern]; !ok {
-			linkRECache[pattern] = regexp.MustCompile(pattern)
-		}
-		linkRE := linkRECache[pattern]
+	// are embedded. Compile all patterns upfront to avoid regex compilation
+	// overhead in the replacement loop.
+	audioPatterns := make([]*regexp.Regexp, len(audioFiles))
+	for i, fname := range audioFiles {
+		audioPatterns[i] = regexp.MustCompile(`\[[^\]]*\]\(` + regexp.QuoteMeta(fname) + `\)`)
+	}
+	for i, fname := range audioFiles {
 		player := fmt.Sprintf(`<audio controls src="%s"></audio>`, URLPath(fname))
-		replaced := linkRE.ReplaceAllString(md, player)
+		replaced := audioPatterns[i].ReplaceAllString(md, player)
 		if replaced != md {
 			md = replaced
 			continue
