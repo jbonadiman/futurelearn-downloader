@@ -58,7 +58,7 @@ var (
 
 // pickVariant returns the highest-bandwidth non-I-FRAME variant URI from
 // a master playlist.
-func pickVariant(master string) (bandwidth int, uri string, ok bool) {
+func pickVariant(master string) (uri string, ok bool) {
 	lines := strings.Split(strings.ReplaceAll(master, "\r\n", "\n"), "\n")
 	best := -1
 	for i, line := range lines {
@@ -73,7 +73,7 @@ func pickVariant(master string) (bandwidth int, uri string, ok bool) {
 		if err != nil || bw <= best {
 			continue
 		}
-		best, bandwidth, uri, ok = bw, bw, lines[i+1], true
+		best, uri, ok = bw, lines[i+1], true
 	}
 	return
 }
@@ -295,7 +295,7 @@ func downloadHLSNative(masterURL, destMP4 string) error {
 	if err != nil {
 		return err
 	}
-	_, variantURI, ok := pickVariant(masterText)
+	variantURI, ok := pickVariant(masterText)
 	if !ok {
 		return errors.New("no usable HLS variant in master playlist")
 	}
@@ -345,10 +345,14 @@ func downloadHLSNative(masterURL, destMP4 string) error {
 
 	jobs := make(chan int)
 	go func() {
+		defer close(jobs)
 		for i := range segURLs {
-			jobs <- i
+			select {
+			case <-failed:
+				return
+			case jobs <- i:
+			}
 		}
-		close(jobs)
 	}()
 
 	var wg sync.WaitGroup

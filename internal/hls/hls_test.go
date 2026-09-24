@@ -45,12 +45,12 @@ func probeDuration(t *testing.T, path string) float64 {
 
 func TestPickVariantIgnoresIFrame(t *testing.T) {
 	master := readFixture(t, "media/master.m3u8")
-	bw, uri, ok := pickVariant(master)
+	uri, ok := pickVariant(master)
 	if !ok {
 		t.Fatal("no variant")
 	}
-	if bw != 1400000 || uri != "video-720p.m3u8?context=SYNTHETICCONTEXT" {
-		t.Fatalf("picked %d %q", bw, uri)
+	if uri != "video-720p.m3u8?context=SYNTHETICCONTEXT" {
+		t.Fatalf("picked %q, want video-720p", uri)
 	}
 }
 
