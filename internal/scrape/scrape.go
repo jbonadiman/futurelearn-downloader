@@ -331,28 +331,7 @@ func RunOne(treeHTML string, client Client, cfg Config, stdout io.Writer) error 
 	locked := course.LockedWeeks(weeks)
 	sourceURL := course.SourceURL(items)
 
-	if len(locked) > 0 {
-		verb := "scraping anyway"
-		if cfg.SkipLocked {
-			verb = "skipping"
-		}
-		fmt.Fprintf(stdout, "WARNING: %d week(s) not yet released to you — %s:\n", len(locked), verb)
-		for _, week := range locked {
-			line := fmt.Sprintf("  - Week %d: %s", week.Number, week.FolderName)
-			if week.UnlocksAt != "" {
-				line += fmt.Sprintf("  (unlocks %s)", week.UnlocksAt)
-			}
-			fmt.Fprintln(stdout, line)
-		}
-		if cfg.SkipLocked {
-			fmt.Fprint(stdout, "Re-run after they open; completed steps are skipped, so only the new "+
-				"weeks are fetched.\n\n")
-		} else {
-			fmt.Fprint(stdout, "WARNING: these weeks are gated in the UI but their content is still\n"+
-				"         served to an enrolled session, so it is being downloaded now.\n"+
-				"         Pass --skip-locked to take only what has been released.\n\n")
-		}
-	}
+	reportLockedWeeks(locked, cfg.SkipLocked, stdout)
 
 	// Folders for every collected step are created up front, before --limit
 	// truncates the work list.
@@ -434,24 +413,59 @@ func RunOne(treeHTML string, client Client, cfg Config, stdout io.Writer) error 
 	}
 	fmt.Fprintln(stdout, doneMsg)
 
-	if len(locked) > 0 {
-		parts := make([]string, len(locked))
-		for i, week := range locked {
-			if week.UnlocksAt != "" {
-				parts[i] = fmt.Sprintf("Week %d on %s", week.Number, week.UnlocksAt)
-			} else {
-				parts[i] = fmt.Sprintf("Week %d", week.Number)
-			}
-		}
-		nxt := strings.Join(parts, ", ")
-		if cfg.SkipLocked {
-			fmt.Fprintf(stdout, "Still locked: %s. Re-run then to pick them up.\n", nxt)
-		} else {
-			fmt.Fprintf(stdout, "WARNING: included %d week(s) not yet released to you (%s).\n", len(locked), nxt)
-		}
-	}
+	reportFinalLockedWeeks(locked, cfg.SkipLocked, stdout)
 
 	return nil
+}
+
+// reportLockedWeeks warns about locked weeks and how they will be handled.
+func reportLockedWeeks(locked []course.LockedWeek, skipLocked bool, stdout io.Writer) {
+	if len(locked) == 0 {
+		return
+	}
+
+	verb := "scraping anyway"
+	if skipLocked {
+		verb = "skipping"
+	}
+	fmt.Fprintf(stdout, "WARNING: %d week(s) not yet released to you — %s:\n", len(locked), verb)
+	for _, week := range locked {
+		line := fmt.Sprintf("  - Week %d: %s", week.Number, week.FolderName)
+		if week.UnlocksAt != "" {
+			line += fmt.Sprintf("  (unlocks %s)", week.UnlocksAt)
+		}
+		fmt.Fprintln(stdout, line)
+	}
+	if skipLocked {
+		fmt.Fprint(stdout, "Re-run after they open; completed steps are skipped, so only the new "+
+			"weeks are fetched.\n\n")
+	} else {
+		fmt.Fprint(stdout, "WARNING: these weeks are gated in the UI but their content is still\n"+
+			"         served to an enrolled session, so it is being downloaded now.\n"+
+			"         Pass --skip-locked to take only what has been released.\n\n")
+	}
+}
+
+// reportFinalLockedWeeks reports which locked weeks remain after scraping.
+func reportFinalLockedWeeks(locked []course.LockedWeek, skipLocked bool, stdout io.Writer) {
+	if len(locked) == 0 {
+		return
+	}
+
+	parts := make([]string, len(locked))
+	for i, week := range locked {
+		if week.UnlocksAt != "" {
+			parts[i] = fmt.Sprintf("Week %d on %s", week.Number, week.UnlocksAt)
+		} else {
+			parts[i] = fmt.Sprintf("Week %d", week.Number)
+		}
+	}
+	nxt := strings.Join(parts, ", ")
+	if skipLocked {
+		fmt.Fprintf(stdout, "Still locked: %s. Re-run then to pick them up.\n", nxt)
+	} else {
+		fmt.Fprintf(stdout, "WARNING: included %d week(s) not yet released to you (%s).\n", len(locked), nxt)
+	}
 }
 
 func fileNonEmpty(path string) bool {
