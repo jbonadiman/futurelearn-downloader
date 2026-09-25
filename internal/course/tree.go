@@ -104,11 +104,11 @@ func findWeeksBlob(html string) (string, bool) {
 // page-data carrier, wrapped in an HTML comment.
 func ScriptBlobs(html string) []string {
 	matches := scriptBlobRE.FindAllStringSubmatch(html, -1)
-	out := make([]string, len(matches))
+	blobs := make([]string, len(matches))
 	for i, m := range matches {
-		out[i] = m[1]
+		blobs[i] = m[1]
 	}
-	return out
+	return blobs
 }
 
 // HasCourseTree reports whether html embeds a parseable course tree.
@@ -137,23 +137,23 @@ func WeekFolderName(w Week) string {
 
 // LockedWeeks returns every locked week in weeks.
 func LockedWeeks(weeks []Week) []LockedWeek {
-	var out []LockedWeek
+	var lockedWeeks []LockedWeek
 	for _, w := range weeks {
 		if w.Locked {
-			out = append(out, LockedWeek{
+			lockedWeeks = append(lockedWeeks, LockedWeek{
 				FolderName: WeekFolderName(w),
 				Number:     w.Number,
 				UnlocksAt:  w.WeekUnlocksAt,
 			})
 		}
 	}
-	return out
+	return lockedWeeks
 }
 
 // CollectSteps flattens weeks -> activities -> steps and stamps each
 // Step's folder Parts.
 func CollectSteps(weeks []Week, includeLocked bool) []Step {
-	var out []Step
+	var steps []Step
 	for _, w := range weeks {
 		if w.Locked && !includeLocked {
 			continue
@@ -170,11 +170,11 @@ func CollectSteps(weeks []Week, includeLocked bool) []Step {
 					stepName = strings.TrimSpace(Sanitize(snum) + " " + stepName)
 				}
 				step.Parts = []string{weekName, actName, stepName}
-				out = append(out, step)
+				steps = append(steps, step)
 			}
 		}
 	}
-	return out
+	return steps
 }
 
 // SourceURL returns the first step's URL: a stable, re-scrapable entry

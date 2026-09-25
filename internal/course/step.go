@@ -150,8 +150,8 @@ func ExtractStep(html string) (StepData, error) {
 			if v.VzaarVideoID != "" {
 				var transcript []string
 				if v.EnglishHTMLTranscript != nil {
-					for _, p := range v.EnglishHTMLTranscript.Paragraphs {
-						transcript = append(transcript, p.Text.HTML)
+					for _, paragraph := range v.EnglishHTMLTranscript.Paragraphs {
+						transcript = append(transcript, paragraph.Text.HTML)
 					}
 				}
 				data.Video = &Video{
