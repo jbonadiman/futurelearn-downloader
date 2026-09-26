@@ -373,14 +373,6 @@ func RunOne(treeHTML string, client Client, cfg Config, stdout io.Writer) error 
 
 	reportLockedWeeks(locked, cfg.SkipLocked, stdout)
 
-	// Folders for every collected step are created up front, before --limit
-	// truncates the work list.
-	for _, step := range items {
-		if err := os.MkdirAll(filepath.Join(root, filepath.Join(step.Parts...)), 0o755); err != nil {
-			return err
-		}
-	}
-
 	if cfg.Limit > 0 && cfg.Limit < len(items) {
 		items = items[:cfg.Limit]
 	}
@@ -388,6 +380,14 @@ func RunOne(treeHTML string, client Client, cfg Config, stdout io.Writer) error 
 	if cfg.DryRun {
 		fmt.Fprintf(stdout, "Would scrape %d step(s) into: %s\n", len(items), root)
 		return nil
+	}
+
+	// Folders are created only for the steps actually processed, after
+	// --limit truncates the work list and --dry-run has had its early return.
+	for _, step := range items {
+		if err := os.MkdirAll(filepath.Join(root, filepath.Join(step.Parts...)), 0o755); err != nil {
+			return err
+		}
 	}
 
 	linkMap := buildStepLinkMap(items)

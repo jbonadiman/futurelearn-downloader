@@ -392,6 +392,46 @@ func TestRunOneDryRunReportsCountAndSkipsWrite(t *testing.T) {
 	}
 }
 
+func TestRunOneDryRunCreatesNoFolders(t *testing.T) {
+	out := t.TempDir()
+	cfg := Config{Out: out, DryRun: true}
+	if err := RunOne(readFixture(t, "pages/course-tree.html"), countingClient{new(int)}, cfg, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(out, "course")
+	if _, err := os.Stat(root); !os.IsNotExist(err) {
+		t.Fatalf("dry run created the root folder: %v", err)
+	}
+}
+
+func TestRunOneLimitOnlyCreatesFoldersForProcessedSteps(t *testing.T) {
+	out := t.TempDir()
+	treeHTML := readFixture(t, "pages/course-tree.html")
+	weeks, err := course.ExtractWeeks(treeHTML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := course.CollectSteps(weeks, true)
+	if len(items) < 3 {
+		t.Fatalf("fixture has only %d steps, need at least 3 to test truncation", len(items))
+	}
+
+	cfg := Config{Out: out, Limit: 2}
+	if err := RunOne(treeHTML, countingClient{new(int)}, cfg, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+
+	root := filepath.Join(out, course.Sanitize(course.RunTitle(treeHTML)))
+	beyondLimit := filepath.Join(root, filepath.Join(items[2].Parts...))
+	if _, err := os.Stat(beyondLimit); !os.IsNotExist(err) {
+		t.Fatalf("--limit created a folder for a step beyond the limit: %s", beyondLimit)
+	}
+	withinLimit := filepath.Join(root, filepath.Join(items[0].Parts...))
+	if _, err := os.Stat(withinLimit); err != nil {
+		t.Fatalf("--limit did not create a folder for a processed step: %v", err)
+	}
+}
+
 func TestLocalizeStepLinksRewritesToRelativeMarkdownPath(t *testing.T) {
 	linkMap := map[string]string{
 		"/courses/c/1/steps/2": filepath.Join("Week 1", "Two.md"),
