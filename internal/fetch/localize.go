@@ -282,7 +282,7 @@ func (c *Client) Subtitles(video *course.Video, folder, base string) ([]string, 
 		if sub.Src == "" {
 			continue
 		}
-		lang := strings.ToLower(firstNonEmpty(sub.SrcLang, sub.Label, "sub"))
+		lang := course.SubtitleLangKey(sub.SrcLang, sub.Label)
 		index := seen[lang]
 		seen[lang] = index + 1
 

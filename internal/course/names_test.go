@@ -64,3 +64,15 @@ func TestSubtitleBasename(t *testing.T) {
 		t.Fatalf("default: got %q", got)
 	}
 }
+
+func TestSubtitleLangKey(t *testing.T) {
+	if got := SubtitleLangKey("EN", ""); got != "en" {
+		t.Fatalf("got %q", got)
+	}
+	if got := SubtitleLangKey("", "Español"); got != "español" {
+		t.Fatalf("label fallback: got %q", got)
+	}
+	if got := SubtitleLangKey("", ""); got != "sub" {
+		t.Fatalf("default: got %q", got)
+	}
+}

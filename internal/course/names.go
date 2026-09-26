@@ -108,16 +108,22 @@ func UniqueName(base, ext string, used map[string]bool) string {
 	return name
 }
 
+// SubtitleLangKey picks a subtitle's language key: srcLang, or label, or
+// "sub" if both are empty — the same rule SubtitleBasename and the caller
+// that dedupes repeated languages both need.
+func SubtitleLangKey(srcLang, label string) string {
+	if srcLang != "" {
+		return strings.ToLower(srcLang)
+	}
+	if label != "" {
+		return strings.ToLower(label)
+	}
+	return "sub"
+}
+
 // SubtitleBasename builds a subtitle file's basename from a step title, language and label.
 func SubtitleBasename(title, srcLang, label string, index int) string {
-	lang := srcLang
-	if lang == "" {
-		lang = label
-	}
-	if lang == "" {
-		lang = "sub"
-	}
-	lang = Sanitize(strings.ToLower(lang))
+	lang := Sanitize(SubtitleLangKey(srcLang, label))
 	lang = strings.ReplaceAll(lang, " ", "_")
 	if index != 0 {
 		lang = fmt.Sprintf("%s.%d", lang, index)
