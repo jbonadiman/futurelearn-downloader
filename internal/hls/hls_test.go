@@ -1,6 +1,7 @@
 package hls
 
 import (
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -139,12 +140,52 @@ func TestDownloadHLSNativeEndToEndAgainstHTTPServer(t *testing.T) {
 
 	dir := t.TempDir()
 	dest := filepath.Join(dir, "out.mp4")
-	if err := downloadHLSNative(srv.URL+"/adaptive.m3u8", dest); err != nil {
+	if err := downloadHLSNative(srv.URL+"/adaptive.m3u8", dest, nil); err != nil {
 		t.Fatalf("downloadHLSNative: %v", err)
 	}
 	dur := probeDuration(t, dest)
 	if math.Abs(dur-6.0) > 0.3 {
 		t.Fatalf("muxed duration %.2fs, want ~6.0s", dur)
+	}
+}
+
+func TestResolvePlaylistThenDownloadPlaylistMatchesDirectDownload(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not installed")
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/adaptive.m3u8", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(readFixture(t, "media/master.m3u8")))
+	})
+	mux.HandleFunc("/video-720p.m3u8", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(readFixture(t, "media/variant.m3u8")))
+	})
+	for _, n := range []string{"seg000.ts", "seg001.ts", "seg002.ts"} {
+		n := n
+		mux.HandleFunc("/"+n, func(w http.ResponseWriter, r *http.Request) {
+			b, _ := os.ReadFile("../../internal/testdata/media/" + n)
+			w.Write(b)
+		})
+	}
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	masterURL := srv.URL + "/adaptive.m3u8"
+	playlist, err := ResolvePlaylist(masterURL)
+	if err != nil {
+		t.Fatalf("ResolvePlaylist: %v", err)
+	}
+	if len(playlist.SegURLs) != 3 {
+		t.Fatalf("got %d segment URLs, want 3", len(playlist.SegURLs))
+	}
+
+	dest2 := filepath.Join(t.TempDir(), "out.mp4")
+	if err := DownloadPlaylist(playlist, masterURL, dest2, io.Discard); err != nil {
+		t.Fatalf("DownloadPlaylist: %v", err)
+	}
+	dur2 := probeDuration(t, dest2)
+	if math.Abs(dur2-6.0) > 0.3 {
+		t.Fatalf("muxed duration %.2fs, want ~6.0s", dur2)
 	}
 }
 
@@ -155,7 +196,7 @@ func TestDownloadHLSNativeRejectsIFrameOnlyMaster(t *testing.T) {
 	defer srv.Close()
 
 	dest := filepath.Join(t.TempDir(), "out.mp4")
-	err := downloadHLSNative(srv.URL, dest)
+	err := downloadHLSNative(srv.URL, dest, nil)
 	if err == nil || !strings.Contains(err.Error(), "no usable HLS variant") {
 		t.Fatalf("expected 'no usable HLS variant' error, got: %v", err)
 	}

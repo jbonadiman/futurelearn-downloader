@@ -282,42 +282,82 @@ func ffprobeDuration(path string) (float64, error) {
 	return strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
 }
 
-// downloadHLSNative fetches the master and variant playlists, downloads
-// every segment with hlsWorkers parallel connections (each worker owns its
-// own client), and muxes them as they arrive so the local mux pass
+// Playlist is an HLS variant playlist resolved ahead of downloading it:
+// every segment URL and the stream's total duration. Resolving it costs a
+// network round trip to the master and variant playlist endpoints, which
+// ResolvePlaylist lets a caller pay early, before the video's turn to
+// download comes up.
+type Playlist struct {
+	SegURLs  []string
+	Duration float64
+}
+
+// ResolvePlaylist fetches and parses masterURL's master and variant
+// playlists, resolving every segment to an absolute URL.
+func ResolvePlaylist(masterURL string) (*Playlist, error) {
+	client, err := newHLSHTTPClient()
+	if err != nil {
+		return nil, err
+	}
+	segURLs, duration, err := resolvePlaylist(client, masterURL)
+	if err != nil {
+		return nil, err
+	}
+	return &Playlist{SegURLs: segURLs, Duration: duration}, nil
+}
+
+// resolvePlaylist does the master-playlist GET, variant-playlist GET and
+// parse that both downloadHLSNative and ResolvePlaylist need.
+func resolvePlaylist(client tls_client.HttpClient, masterURL string) (segURLs []string, duration float64, err error) {
+	masterText, masterFinal, err := hlsGet(client, masterURL)
+	if err != nil {
+		return nil, 0, err
+	}
+	variantURI, ok := pickVariant(masterText)
+	if !ok {
+		return nil, 0, errors.New("no usable HLS variant in master playlist")
+	}
+	childURL, err := resolveURL(masterFinal, variantURI)
+	if err != nil {
+		return nil, 0, err
+	}
+	childText, childFinal, err := hlsGet(client, childURL)
+	if err != nil {
+		return nil, 0, err
+	}
+	segRel, duration, err := parsePlaylist(childText)
+	if err != nil {
+		return nil, 0, err
+	}
+	segURLs = make([]string, len(segRel))
+	for i, rel := range segRel {
+		u, err := resolveURL(childFinal, rel)
+		if err != nil {
+			return nil, 0, err
+		}
+		segURLs[i] = u
+	}
+	return segURLs, duration, nil
+}
+
+// downloadHLSNative downloads every segment of playlist (resolving it first
+// if playlist is nil) with hlsWorkers parallel connections (each worker owns
+// its own client), and muxes them as they arrive so the local mux pass
 // overlaps the network transfer instead of following it.
-func downloadHLSNative(masterURL, destMP4 string) error {
+func downloadHLSNative(masterURL, destMP4 string, playlist *Playlist) error {
 	client, err := newHLSHTTPClient()
 	if err != nil {
 		return err
 	}
-	masterText, masterFinal, err := hlsGet(client, masterURL)
-	if err != nil {
-		return err
-	}
-	variantURI, ok := pickVariant(masterText)
-	if !ok {
-		return errors.New("no usable HLS variant in master playlist")
-	}
-	childURL, err := resolveURL(masterFinal, variantURI)
-	if err != nil {
-		return err
-	}
-	childText, childFinal, err := hlsGet(client, childURL)
-	if err != nil {
-		return err
-	}
-	segRel, duration, err := parsePlaylist(childText)
-	if err != nil {
-		return err
-	}
-	segURLs := make([]string, len(segRel))
-	for i, rel := range segRel {
-		u, err := resolveURL(childFinal, rel)
+	var segURLs []string
+	var duration float64
+	if playlist != nil {
+		segURLs, duration = playlist.SegURLs, playlist.Duration
+	} else {
+		segURLs, duration, err = resolvePlaylist(client, masterURL)
 		if err != nil {
 			return err
 		}
-		segURLs[i] = u
 	}
 
 	tmp, err := os.MkdirTemp(filepath.Dir(destMP4), "flhls-")
@@ -426,7 +466,18 @@ func downloadVideoFFmpeg(masterURL, destMP4 string) error {
 // parallel native path first, falling back to ffmpeg's own demuxer for
 // playlists it can't handle; a fallback is reported to log.
 func Download(masterURL, destMP4 string, log io.Writer) error {
-	if err := downloadHLSNative(masterURL, destMP4); err != nil {
+	return download(nil, masterURL, destMP4, log)
+}
+
+// DownloadPlaylist is Download, but for a playlist already resolved by
+// ResolvePlaylist — it skips the master/variant round trip Download would
+// otherwise pay again.
+func DownloadPlaylist(playlist *Playlist, masterURL, destMP4 string, log io.Writer) error {
+	return download(playlist, masterURL, destMP4, log)
+}
+
+func download(playlist *Playlist, masterURL, destMP4 string, log io.Writer) error {
+	if err := downloadHLSNative(masterURL, destMP4, playlist); err != nil {
 		fmt.Fprintf(log, "      ! native HLS download failed (%v); using ffmpeg instead\n", err)
 		return downloadVideoFFmpeg(masterURL, destMP4)
 	}

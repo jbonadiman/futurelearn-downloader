@@ -15,9 +15,16 @@ import (
 
 	"github.com/jbonadiman/futurelearn-downloader/internal/course"
 	"github.com/jbonadiman/futurelearn-downloader/internal/fetch"
+	"github.com/jbonadiman/futurelearn-downloader/internal/hls"
 	"github.com/jbonadiman/futurelearn-downloader/internal/markdown"
 	"github.com/jbonadiman/futurelearn-downloader/internal/quiz"
 )
+
+// videoPrefetchWindow is how many upcoming videos' HLS playlists are kept
+// resolved ahead of Phase 2's download loop, so the round trip to vzaar's
+// signing redirector overlaps an earlier video's segment transfer instead
+// of stalling the loop between videos.
+const videoPrefetchWindow = 4
 
 // newClient builds the real *fetch.Client used by Run, wired to cfg's
 // cookies/delay and to stdout so fetch-internal failures (subtitle/download/
@@ -43,6 +50,8 @@ type Client interface {
 	Subtitles(video *course.Video, folder, base string) ([]string, error)
 	ResolveRelatedLinks(links []course.RelatedLink) []course.RelatedLink
 	Video(vzaarID, destMP4 string) error
+	PrefetchVideo(vzaarID string) (*hls.Playlist, error)
+	VideoResolved(vzaarID, destMP4 string, playlist *hls.Playlist) error
 }
 
 // Config holds one field per CLI flag.
@@ -318,6 +327,37 @@ func processStep(client Client, html string, step course.Step, folder string, li
 
 type videoJob struct{ VzaarID, Dest string }
 
+// downloadVideos downloads every job in order, keeping videoPrefetchWindow
+// upcoming jobs' HLS playlists resolved ahead of time so the round trip to
+// vzaar's signing redirector overlaps an earlier video's segment transfer.
+func downloadVideos(client Client, videoJobs []videoJob, stdout io.Writer) {
+	playlists := make([]*hls.Playlist, len(videoJobs))
+	ready := make([]chan struct{}, len(videoJobs))
+	for i := range videoJobs {
+		ready[i] = make(chan struct{})
+	}
+	prefetch := func(i int) {
+		if i >= len(videoJobs) {
+			return
+		}
+		go func() {
+			defer close(ready[i])
+			if pl, err := client.PrefetchVideo(videoJobs[i].VzaarID); err == nil {
+				playlists[i] = pl
+			}
+		}()
+	}
+	for i := 0; i < videoPrefetchWindow && i < len(videoJobs); i++ {
+		prefetch(i)
+	}
+	for j, job := range videoJobs {
+		fmt.Fprintf(stdout, "  [video %d/%d] %s\n", j+1, len(videoJobs), filepath.Base(job.Dest))
+		prefetch(j + videoPrefetchWindow)
+		<-ready[j]
+		client.VideoResolved(job.VzaarID, job.Dest, playlists[j])
+	}
+}
+
 // RunOne scrapes a single course from a page whose HTML embeds the
 // course tree.
 func RunOne(treeHTML string, client Client, cfg Config, stdout io.Writer) error {
@@ -396,10 +436,7 @@ func RunOne(treeHTML string, client Client, cfg Config, stdout io.Writer) error 
 	}
 
 	// ---- Phase 2: videos via ffmpeg (no cookies needed) ----
-	for j, job := range videoJobs {
-		fmt.Fprintf(stdout, "  [video %d/%d] %s\n", j+1, len(videoJobs), filepath.Base(job.Dest))
-		client.Video(job.VzaarID, job.Dest)
-	}
+	downloadVideos(client, videoJobs, stdout)
 
 	// ---- ToC ----
 	toc := markdown.BuildToC(rootName, items, locked, sourceURL)

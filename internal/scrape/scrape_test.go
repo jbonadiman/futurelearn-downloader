@@ -10,10 +10,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jbonadiman/futurelearn-downloader/internal/course"
 	"github.com/jbonadiman/futurelearn-downloader/internal/fetch"
+	"github.com/jbonadiman/futurelearn-downloader/internal/hls"
 )
 
 const testdataDir = "../testdata"
@@ -265,6 +267,74 @@ func (c countingClient) ResolveRelatedLinks(links []course.RelatedLink) []course
 	return links
 }
 func (c countingClient) Video(string, string) error { return c.fail() }
+func (c countingClient) PrefetchVideo(string) (*hls.Playlist, error) {
+	return nil, c.fail()
+}
+func (c countingClient) VideoResolved(string, string, *hls.Playlist) error { return c.fail() }
+
+// videoPrefetchClient records, for every job, the playlist PrefetchVideo
+// returned and the playlist VideoResolved was actually called with, so a
+// test can assert each job receives its own prefetch result — not another
+// job's, and not a stale one when its prefetch failed.
+type videoPrefetchClient struct {
+	Client
+	playlistFor  map[string]*hls.Playlist
+	failPrefetch map[string]bool
+
+	mu         sync.Mutex
+	prefetched []string
+	resolved   []string
+	mismatch   error
+}
+
+func (c *videoPrefetchClient) PrefetchVideo(vzaarID string) (*hls.Playlist, error) {
+	c.mu.Lock()
+	c.prefetched = append(c.prefetched, vzaarID)
+	c.mu.Unlock()
+	if c.failPrefetch[vzaarID] {
+		return nil, fmt.Errorf("prefetch failed for %s", vzaarID)
+	}
+	return c.playlistFor[vzaarID], nil
+}
+
+func (c *videoPrefetchClient) VideoResolved(vzaarID, destMP4 string, playlist *hls.Playlist) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.resolved = append(c.resolved, vzaarID)
+	switch {
+	case c.failPrefetch[vzaarID] && playlist != nil:
+		c.mismatch = fmt.Errorf("video %s: got a non-nil playlist after its own prefetch failed", vzaarID)
+	case !c.failPrefetch[vzaarID] && playlist != c.playlistFor[vzaarID]:
+		c.mismatch = fmt.Errorf("video %s: got playlist %p, want its own prefetch result %p", vzaarID, playlist, c.playlistFor[vzaarID])
+	}
+	return nil
+}
+
+func TestDownloadVideosPassesEachJobItsOwnPrefetchedPlaylist(t *testing.T) {
+	const n = 6
+	jobs := make([]videoJob, n)
+	c := &videoPrefetchClient{playlistFor: map[string]*hls.Playlist{}, failPrefetch: map[string]bool{}}
+	for i := range jobs {
+		id := fmt.Sprintf("vid%d", i)
+		jobs[i] = videoJob{VzaarID: id, Dest: id + ".mp4"}
+		c.playlistFor[id] = &hls.Playlist{Duration: float64(i)}
+	}
+	c.failPrefetch["vid3"] = true // one prefetch fails; that job must still run, with a nil playlist
+
+	downloadVideos(c, jobs, io.Discard)
+
+	if c.mismatch != nil {
+		t.Fatal(c.mismatch)
+	}
+	if len(c.resolved) != n {
+		t.Fatalf("resolved %d videos, want %d", len(c.resolved), n)
+	}
+	for i, id := range c.resolved {
+		if id != jobs[i].VzaarID {
+			t.Fatalf("resolved out of order at %d: got %s, want %s", i, id, jobs[i].VzaarID)
+		}
+	}
+}
 
 func TestResumeOverReferenceTreeMakesNoRequests(t *testing.T) {
 	// The reference tree covers the first 7 steps of this course-tree fixture

@@ -23,14 +23,49 @@ var vzaarIDPattern = regexp.MustCompile(`^[a-zA-Z0-9]+$`)
 // segment and ffmpeg work lives in package hls; fetch owns the vzaar URL
 // because that is the FutureLearn-specific part of it.
 func (c *Client) Video(vzaarID, destMP4 string) error {
+	masterURL, err := vzaarMasterURL(vzaarID)
+	if err != nil {
+		return err
+	}
+	return hls.Download(masterURL, destMP4, c.log)
+}
+
+// PrefetchVideo resolves vzaarID's HLS variant playlist ahead of the
+// eventual download, so the round trip to vzaar's signing redirector can
+// happen while an earlier video's segments are still transferring.
+func (c *Client) PrefetchVideo(vzaarID string) (*hls.Playlist, error) {
+	masterURL, err := vzaarMasterURL(vzaarID)
+	if err != nil {
+		return nil, err
+	}
+	return hls.ResolvePlaylist(masterURL)
+}
+
+// VideoResolved is Video, but for a playlist already resolved by
+// PrefetchVideo; playlist may be nil (e.g. the prefetch failed), in which
+// case this behaves exactly like Video.
+func (c *Client) VideoResolved(vzaarID, destMP4 string, playlist *hls.Playlist) error {
+	masterURL, err := vzaarMasterURL(vzaarID)
+	if err != nil {
+		return err
+	}
+	if playlist == nil {
+		return hls.Download(masterURL, destMP4, c.log)
+	}
+	return hls.DownloadPlaylist(playlist, masterURL, destMP4, c.log)
+}
+
+// vzaarMasterURL validates vzaarID and builds and validates its master
+// playlist URL.
+func vzaarMasterURL(vzaarID string) (string, error) {
 	if !vzaarIDPattern.MatchString(vzaarID) {
-		return fmt.Errorf("invalid vzaarID: must be alphanumeric only, got %q", vzaarID)
+		return "", fmt.Errorf("invalid vzaarID: must be alphanumeric only, got %q", vzaarID)
 	}
 	masterURL := fmt.Sprintf("https://view.vzaar.com/%s/adaptive.m3u8", vzaarID)
 	if err := validateMasterURL(masterURL); err != nil {
-		return fmt.Errorf("invalid master URL: %w", err)
+		return "", fmt.Errorf("invalid master URL: %w", err)
 	}
-	return hls.Download(masterURL, destMP4, c.log)
+	return masterURL, nil
 }
 
 // validateMasterURL ensures the URL is HTTPS and from the expected domain.
